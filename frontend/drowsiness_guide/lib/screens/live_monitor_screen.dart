@@ -3,6 +3,8 @@ import 'package:geolocator/geolocator.dart';
 import '../services/weather_service.dart';
 import '../secrets.dart';
 
+Color _white(double opacity) => Colors.white.withAlpha((opacity * 255).round());
+
 class LiveMonitorScreen extends StatefulWidget {
   const LiveMonitorScreen({super.key});
 
@@ -31,7 +33,9 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
   Future<void> _loadLocationOnce() async {
     try {
         final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.low,
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.low,
+          ),
         );
 
         if (!mounted) return;
@@ -191,7 +195,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 2.0,
-                      color: Colors.white.withOpacity(0.9),
+                      color: _white(0.9),
                     ),
                   ),
                 ),
@@ -242,7 +246,7 @@ class _HeaderCard extends StatelessWidget {
                   Text(
                     vehicle,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: _white(0.7),
                     ),
                   ),
                 ],
@@ -252,16 +256,16 @@ class _HeaderCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.06),
+                color: _white(0.06),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: Colors.white.withOpacity(0.12)),
+                border: Border.all(color: _white(0.12)),
               ),
               child: Text(
                 "LIVE",
                 style: TextStyle(
                   letterSpacing: 1.1,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white.withOpacity(0.85),
+                  color: _white(0.85),
                 ),
               ),
             ),
@@ -310,7 +314,7 @@ class _RiskCard extends StatelessWidget {
                       "$v%",
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Colors.white.withOpacity(0.9),
+                        color: _white(0.9),
                       ),
                     ),
                   ),
@@ -335,14 +339,14 @@ class _RiskCard extends StatelessWidget {
                   Text(
                     label,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.75),
+                      color: _white(0.75),
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     "Blink duration + lane behavior",
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.6),
+                      color: _white(0.6),
                     ),
                   ),
                 ],
@@ -359,6 +363,7 @@ class _RiskCard extends StatelessWidget {
 //// Metric Card
 //// ---------------------------------------------------------------------------
 
+// ignore: unused_element
 class _MetricCard extends StatelessWidget {
   final String title;
   final String value;
@@ -381,7 +386,7 @@ class _MetricCard extends StatelessWidget {
             Text(
               title,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
+                color: _white(0.7),
               ),
             ),
 
@@ -403,7 +408,7 @@ class _MetricCard extends StatelessWidget {
                   child: Text(
                     unit,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.6),
+                      color: _white(0.6),
                     ),
                   ),
                 ),
@@ -429,9 +434,9 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = Colors.white.withOpacity(0.05);
-    final border = Colors.white.withOpacity(0.12);
-    final fg = Colors.white.withOpacity(0.85);
+    final bg = _white(0.05);
+    final border = _white(0.12);
+    final fg = _white(0.85);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -451,7 +456,7 @@ class _StatusChip extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             "$label: ",
-            style: TextStyle(color: Colors.white.withOpacity(0.7)),
+            style: TextStyle(color: _white(0.7)),
           ),
           Text(
             value,
