@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'screens/live_monitor_screen.dart';
+import 'screens/drowsiness_detected_screen.dart';
 
 class DriverSafetyApp extends StatelessWidget {
   const DriverSafetyApp({super.key});
@@ -35,7 +36,11 @@ class DriverSafetyApp extends StatelessWidget {
           centerTitle: true,
         ),
       ),
-      home: const LiveMonitorScreen(),
+      routes: {
+        '/': (context) => const LiveMonitorScreen(),
+        '/drowsiness-detected': (context) => const DrowsinessDetectedScreen(),
+      },
+      initialRoute: '/',
     );
   }
 }
