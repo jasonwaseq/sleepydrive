@@ -3,7 +3,17 @@ import 'package:geolocator/geolocator.dart';
 import '../services/weather_service.dart';
 import '../secrets.dart';
 
-Color _white(double opacity) => Colors.white.withAlpha((opacity * 255).round());
+// -------------------- Color System --------------------
+
+Color _black(double opacity) => Colors.black.withAlpha((opacity * 255).round());
+
+const _accentBlue = Color(0xFF5E8AD6);
+const _bgTop = Color(0xFFCED8E4);
+const _bgBottom = Color(0xFF7E97B9);
+const _surface = Color(0xFFF7FAFF);
+const _border = Color(0x1A000000);
+
+// -----------------------------------------------------
 
 class LiveMonitorScreen extends StatefulWidget {
   const LiveMonitorScreen({super.key});
@@ -16,6 +26,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
   String? _latText;
   String? _lonText;
   String? _locErr;
+
   String? _weatherCondition;
   String? _tempText;
   String? _weatherErr;
@@ -28,39 +39,36 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
     _loadLocationOnce();
   }
 
-
-
   Future<void> _loadLocationOnce() async {
     try {
-        final pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.low,
-          ),
-        );
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.low,
+        ),
+      );
 
-        if (!mounted) return;
+      if (!mounted) return;
 
-        setState(() {
+      setState(() {
         _latText = pos.latitude.toStringAsFixed(5);
         _lonText = pos.longitude.toStringAsFixed(5);
         _locErr = null;
-        });
+      });
 
-        await _loadWeather(pos.latitude, pos.longitude);
+      await _loadWeather(pos.latitude, pos.longitude);
     } catch (e) {
-        if (!mounted) return;
-        setState(() {
+      if (!mounted) return;
+      setState(() {
         _locErr = e.toString();
         _latText = null;
         _lonText = null;
-
         _weatherCondition = null;
         _tempText = null;
         _weatherErr = null;
-        });
+        _weatherLoading = false;
+      });
     }
-   }
-
+  }
 
   Future<void> _loadWeather(double lat, double lon) async {
     if (_weatherLoading) return;
@@ -92,88 +100,79 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
     }
   }
 
-
-
-
   @override
   Widget build(BuildContext context) {
-
-    // ---- UI-only mock values (replace with real backend later) ----
-    const fatigueRisk = 42; // 0–100
-    const status = "Normal";
     const driverId = "Sluggish Driver";
     const vehicle = "SlugMobile";
+    const fatigueRisk = 42;
+    const status = "Normal";
 
     return Scaffold(
+      backgroundColor: _bgTop,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        iconTheme: const IconThemeData(color: Colors.black),
         title: const Text(
-          'WAKE TF UP',
-          style: TextStyle(fontWeight: FontWeight.w600, letterSpacing: 2.0),
+          'blink',
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 2,
+          ),
         ),
         actions: [
-            IconButton(
-                onPressed: _loadLocationOnce,
-                icon: const Icon(Icons.my_location),
-            ),
+          IconButton(
+            onPressed: _loadLocationOnce,
+            icon: const Icon(Icons.my_location, color: Colors.black),
+          ),
         ],
       ),
-
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
-          children: [
-            _HeaderCard(driverId: driverId, vehicle: vehicle),
-            const SizedBox(height: 12),
-
-            _RiskCard(value: fatigueRisk, label: status),
-            const SizedBox(height: 12),
-
-            Wrap(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [_bgTop, _bgBottom],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: ListView(
+            children: [
+              _HeaderCard(driverId: driverId, vehicle: vehicle),
+              const SizedBox(height: 12),
+              _RiskCard(value: fatigueRisk, label: status),
+              const SizedBox(height: 12),
+              Wrap(
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                    const _StatusChip(label: "Face", value: "Detected"),
-                    const _StatusChip(label: "Eyes", value: "Open"),
-                    const _StatusChip(label: "Alert", value: "None"),
-                    _StatusChip(
-                      label: "Lat",
-                      value: _latText ?? (_locErr == null ? "Loading…" : "Unavailable"),
-                    ),
-                    _StatusChip(
-                      label: "Lon",
-                      value: _lonText ?? (_locErr == null ? "Loading…" : "Unavailable"),
-                    ),
-                    _StatusChip(
-                      label: "Weather",
-                      value: _weatherCondition ?? (_weatherErr == null ? "Loading…" : "Unavailable"),
-                    ),
-                    _StatusChip(
-                      label: "Temp",
-                      value: _tempText ?? (_weatherErr == null ? "Loading…" : "Unavailable"),
-                    ),
+                  const _StatusChip(label: "Face", value: "Detected"),
+                  const _StatusChip(label: "Eyes", value: "Open"),
+                  const _StatusChip(label: "Alert", value: "None"),
+                  _StatusChip(
+                    label: "Lat",
+                    value: _latText ?? (_locErr == null ? "Loading…" : "Unavailable"),
+                  ),
+                  _StatusChip(
+                    label: "Lon",
+                    value: _lonText ?? (_locErr == null ? "Loading…" : "Unavailable"),
+                  ),
+                  _StatusChip(
+                    label: "Weather",
+                    value: _weatherCondition ?? (_weatherErr == null ? "Loading…" : "Unavailable"),
+                  ),
+                  _StatusChip(
+                    label: "Temp",
+                    value: _tempText ?? (_weatherErr == null ? "Loading…" : "Unavailable"),
+                  ),
                 ],
-            ),
-
-
-            const SizedBox(height: 12),
-
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.35,
-              children: const [
-                // _MetricCard(title: "Blink Rate", value: "18", unit: "blinks/min"),
-                // _MetricCard(title: "PERCLOS", value: "0.12", unit: "last 60s"),
-                // _MetricCard(title: "Lane Risk", value: "0.35", unit: "0–1"),
-                // _MetricCard(title: "Weather", value: "Clear", unit: "58°F"),
-              ],
-            ),
-
-            const SizedBox(height: 20),
-          ],
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: SafeArea(
@@ -181,21 +180,22 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: SizedBox(
-            height: 64,
-            child: Card(
-              clipBehavior: Clip.antiAlias,
+            height: 60,
+            child: Container(
+              decoration: BoxDecoration(
+                color: _accentBlue,
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: InkWell(
-                onTap: () {
-                  Navigator.pushNamed(context, '/drowsiness-detected');
-                },
-                child: Center(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => Navigator.pushNamed(context, '/drowsiness-detected'),
+                child: const Center(
                   child: Text(
                     'DROWSINESS DETECTED',
                     style: TextStyle(
-                      fontSize: 16,
+                      color: Colors.white,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 2.0,
-                      color: _white(0.9),
+                      letterSpacing: 2,
                     ),
                   ),
                 ),
@@ -208,64 +208,70 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
   }
 }
 
-//// ---------------------------------------------------------------------------
-//// Header Card
-//// ---------------------------------------------------------------------------
+// -------------------- Components --------------------
 
 class _HeaderCard extends StatelessWidget {
   final String driverId;
   final String vehicle;
 
-  const _HeaderCard({
-    required this.driverId,
-    required this.vehicle,
-  });
+  const _HeaderCard({required this.driverId, required this.vehicle});
 
   @override
   Widget build(BuildContext context) {
     return Card(
+      color: _surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: _border),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            const Icon(Icons.shield, size: 26),
+            const Icon(Icons.shield, color: _accentBlue),
             const SizedBox(width: 12),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    driverId,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                  const Text(
+                    "Driver",
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.3,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    vehicle,
-                    style: TextStyle(
-                      color: _white(0.7),
+                    driverId,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w700,
                     ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    vehicle,
+                    style: TextStyle(color: _black(0.6)),
                   ),
                 ],
               ),
             ),
-
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: _white(0.06),
+                color: _accentBlue.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: _white(0.12)),
               ),
-              child: Text(
+              child: const Text(
                 "LIVE",
                 style: TextStyle(
-                  letterSpacing: 1.1,
+                  color: _accentBlue,
                   fontWeight: FontWeight.w700,
-                  color: _white(0.85),
+                  letterSpacing: 1,
                 ),
               ),
             ),
@@ -276,24 +282,23 @@ class _HeaderCard extends StatelessWidget {
   }
 }
 
-//// ---------------------------------------------------------------------------
-//// Fatigue Risk Card
-//// ---------------------------------------------------------------------------
-
 class _RiskCard extends StatelessWidget {
   final int value;
   final String label;
 
-  const _RiskCard({
-    required this.value,
-    required this.label,
-  });
+  const _RiskCard({required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
     final v = value.clamp(0, 100);
 
     return Card(
+      color: _surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: _border),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -307,23 +312,22 @@ class _RiskCard extends StatelessWidget {
                   CircularProgressIndicator(
                     value: v / 100.0,
                     strokeWidth: 6,
-                    backgroundColor: Colors.white12,
+                    color: _accentBlue,
+                    backgroundColor: _black(0.08),
                   ),
                   Center(
                     child: Text(
                       "$v%",
                       style: TextStyle(
+                        color: _black(0.8),
                         fontWeight: FontWeight.w700,
-                        color: _white(0.9),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-
             const SizedBox(width: 16),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,23 +335,16 @@ class _RiskCard extends StatelessWidget {
                   const Text(
                     "Fatigue Risk",
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                      color: Colors.black,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: _white(0.75),
-                    ),
-                  ),
+                  Text(label, style: TextStyle(color: _black(0.65))),
                   const SizedBox(height: 8),
                   Text(
                     "Blink duration + lane behavior",
-                    style: TextStyle(
-                      color: _white(0.6),
-                    ),
+                    style: TextStyle(color: _black(0.5)),
                   ),
                 ],
               ),
@@ -359,91 +356,20 @@ class _RiskCard extends StatelessWidget {
   }
 }
 
-//// ---------------------------------------------------------------------------
-//// Metric Card
-//// ---------------------------------------------------------------------------
-
-// ignore: unused_element
-class _MetricCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final String unit;
-
-  const _MetricCard({
-    required this.title,
-    required this.value,
-    required this.unit,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                color: _white(0.7),
-              ),
-            ),
-
-            const Spacer(),
-
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
-                  child: Text(
-                    unit,
-                    style: TextStyle(
-                      color: _white(0.6),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// pill shaped status indicators
-
 class _StatusChip extends StatelessWidget {
   final String label;
   final String value;
 
-  const _StatusChip({
-    required this.label,
-    required this.value,
-  });
+  const _StatusChip({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    final bg = _white(0.05);
-    final border = _white(0.12);
-    final fg = _white(0.85);
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: bg,
+        color: _surface,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: border),
+        border: Border.all(color: _border), // <-- not const (works across SDKs)
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -451,16 +377,19 @@ class _StatusChip extends StatelessWidget {
           Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+              color: _accentBlue,
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: 8),
-          Text(
-            "$label: ",
-            style: TextStyle(color: _white(0.7)),
-          ),
+          Text("$label: ", style: TextStyle(color: _black(0.55))),
           Text(
             value,
-            style: TextStyle(color: fg, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: _black(0.8),
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
