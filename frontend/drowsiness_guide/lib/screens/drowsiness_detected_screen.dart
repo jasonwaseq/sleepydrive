@@ -14,7 +14,6 @@ class DrowsinessDetectedScreen extends StatefulWidget {
 }
 
 class _DrowsinessDetectedScreenState extends State<DrowsinessDetectedScreen> {
-  // Match your login palette
   static const Color _bgTop = Color(0xFFCED8E4);
   static const Color _bgBottom = Color(0xFF7E97B9);
   static const Color _brandBlue = Color(0xFF5E8AD6);
@@ -85,7 +84,6 @@ class _DrowsinessDetectedScreenState extends State<DrowsinessDetectedScreen> {
   }
 
   Future<void> _openDirections(_GasStationCardModel station) async {
-    // Google Maps directions with lat/lon destination.
     final uri = Uri.https('www.google.com', '/maps/dir/', {
       'api': '1',
       'destination': '${station.lat},${station.lon}',

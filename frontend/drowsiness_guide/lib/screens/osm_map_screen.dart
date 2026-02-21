@@ -1,11 +1,3 @@
-// lib/screens/osm_map_screen.dart
-//
-// In-app OpenStreetMap screen styled to match your login/dashboard:
-// - CARTO Voyager tiles (light + clean)
-// - Route polyline in your app's blue (#5E8AD6) with outline
-// - Flat "textfield-like" overlay card with Navigate button (same blue)
-// - Clean dot markers (instead of big icons)
-
 import 'dart:convert';
 import 'dart:math';
 
@@ -29,7 +21,6 @@ class OSMMapScreen extends StatefulWidget {
 class _OSMMapScreenState extends State<OSMMapScreen> {
   final MapController _mapController = MapController();
 
-  // Match your login palette
   static const Color _brandBlue = Color(0xFF5E8AD6);
   static const Color _bgTop = Color(0xFFCED8E4);
   static const Color _bgBottom = Color(0xFF7E97B9);
@@ -245,7 +236,6 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                       if (_route.isNotEmpty)
                         PolylineLayer(
                           polylines: [
-                            // Outline
                             Polyline(
                               points: _route,
                               strokeWidth: 9,
@@ -253,7 +243,6 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                               strokeCap: StrokeCap.round,
                               strokeJoin: StrokeJoin.round,
                             ),
-                            // Main stroke
                             Polyline(
                               points: _route,
                               strokeWidth: 6,
@@ -311,7 +300,6 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                     ],
                   ),
 
-                  // Flat "textfield-like" overlay card
                   Positioned(
                     top: 12,
                     left: 12,
@@ -361,7 +349,6 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                     ),
                   ),
 
-                  // Attribution
                   Positioned(
                     left: 12,
                     bottom: 10,

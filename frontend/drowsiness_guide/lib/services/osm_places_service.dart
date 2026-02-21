@@ -3,8 +3,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 
 class OSMPlacesService {
-  /// You can rotate instances if one is slow.
-  /// Overpass has multiple public instances; this one is commonly used.
+  
   static const String _endpoint = 'https://overpass-api.de/api/interpreter';
 
   Future<List<PlaceSummary>> fetchNearestGasStations({
@@ -13,8 +12,7 @@ class OSMPlacesService {
     int limit = 5,
     int radiusMeters = 5000,
   }) async {
-    // Overpass QL: find gas stations (amenity=fuel) around point
-    // We request center coordinates for ways/relations too (out center).
+   
     final query = '''
 [out:json][timeout:10];
 (
@@ -45,7 +43,6 @@ out center $limit;
     for (final el in elements) {
       if (el is! Map<String, dynamic>) continue;
 
-      // Nodes have lat/lon, ways/relations often have center.lat/center.lon
       final pLat = (el['lat'] as num?)?.toDouble() ??
           (el['center']?['lat'] as num?)?.toDouble();
       final pLon = (el['lon'] as num?)?.toDouble() ??
@@ -55,7 +52,6 @@ out center $limit;
       final tags = (el['tags'] as Map?)?.cast<String, dynamic>() ?? const {};
       final name = (tags['name'] ?? 'Fuel / Gas station').toString();
 
-      // OSM doesn’t always have a nice “vicinity” field, so we compose one.
       final street = tags['addr:street']?.toString();
       final housenumber = tags['addr:housenumber']?.toString();
       final city = tags['addr:city']?.toString();
@@ -82,7 +78,6 @@ out center $limit;
       if (places.length >= limit) break;
     }
 
-    // Optional: sort by distance (Overpass output order isn’t guaranteed)
     places.sort((a, b) {
       final da = _haversineMeters(lat, lon, a.lat, a.lon);
       final db = _haversineMeters(lat, lon, b.lat, b.lon);
