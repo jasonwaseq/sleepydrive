@@ -40,7 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bgTop = const Color(0xFFCED8E4);   // light blue/gray like your mock
+    final bgTop = const Color(0xFFCED8E4);    
     final bgBottom = const Color(0xFF7E97B9);
 
     return Scaffold(
@@ -65,19 +65,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     const SizedBox(height: 10),
 
-                    // Title
                     Text(
                         "BLINK",
                         style: GoogleFonts.megrim(
                             fontSize: 52,
-                            letterSpacing: 12,   // important for Megrim
+                            letterSpacing: 12,  
                             color: Colors.black,
                         ),
                     ),
 
                     const SizedBox(height: 42),
 
-                    // Email field
                     _FlatField(
                       controller: _emailCtrl,
                       hint: "email",
@@ -85,7 +83,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 14),
 
-                    // Password field
                     _FlatField(
                       controller: _passCtrl,
                       hint: "password",
@@ -94,13 +91,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 26),
 
-                    // Login button
                     SizedBox(
                       width: 220,
                       height: 48,
                       child: FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF5E8AD6), // blue button
+                          backgroundColor: const Color(0xFF5E8AD6),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
