@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/weather_service.dart';
 import '../services/ble_service.dart';
+import '../services/jetson_websocket_service.dart';
 import '../secrets.dart';
 
 // -------------------- Color System --------------------
@@ -41,6 +42,17 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
   StreamSubscription? _bleStateSub;
   StreamSubscription? _bleAlertSub;
 
+  // ── Jetson WebSocket ──
+  final JetsonWebSocketService _jetsonWs = JetsonWebSocketService(
+    uri: Uri.parse('ws://100.122.75.81:8765'),
+  );
+  String _jetsonWsState = 'Disconnected';
+  StreamSubscription? _jetsonWsStateSub;
+  StreamSubscription? _jetsonWsAlertSub;
+
+  String _latestAlertLevel = 'None';
+  final List<_DashboardAlert> _alerts = [];
+
   @override
   void initState() {
     super.initState();
@@ -53,59 +65,65 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
     });
 
     // Listen for BLE alerts and show notification dialog
-    _bleAlertSub = _ble.alerts.listen(_showAlertNotification);
+    _bleAlertSub = _ble.alerts.listen((alert) {
+      _handleIncomingAlert(
+        level: alert.level,
+        levelLabel: alert.levelLabel,
+        message: alert.message,
+        source: 'BLE',
+      );
+    });
+
+    // Listen for Jetson WebSocket status + alerts
+    _jetsonWsStateSub = _jetsonWs.connectionState.listen((state) {
+      if (!mounted) return;
+      setState(() => _jetsonWsState = state);
+    });
+    _jetsonWsAlertSub = _jetsonWs.alerts.listen((alert) {
+      _handleIncomingAlert(
+        level: alert.level,
+        levelLabel: alert.levelLabel,
+        message: alert.message,
+        source: 'Jetson WS',
+      );
+    });
+    _jetsonWs.connect();
   }
 
   @override
   void dispose() {
     _bleStateSub?.cancel();
     _bleAlertSub?.cancel();
+    _jetsonWsStateSub?.cancel();
+    _jetsonWsAlertSub?.cancel();
     _ble.dispose();
+    _jetsonWs.dispose();
     super.dispose();
   }
 
-  void _showAlertNotification(BleAlert alert) {
+  void _handleIncomingAlert({
+    required int level,
+    required String levelLabel,
+    required String message,
+    required String source,
+  }) {
     if (!mounted) return;
-
-    final isWarning = alert.level == 1;
-    final isDanger = alert.level >= 2;
-    final color = isDanger
-        ? const Color(0xFFEF4444)
-        : isWarning
-            ? const Color(0xFFF59E0B)
-            : _accentBlue;
-    final icon = isDanger ? Icons.warning_rounded : Icons.info_outline;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2332),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: color, width: 2),
+    setState(() {
+      _latestAlertLevel = levelLabel;
+      _alerts.insert(
+        0,
+        _DashboardAlert(
+          level: level,
+          levelLabel: levelLabel,
+          message: message,
+          source: source,
+          timestamp: DateTime.now(),
         ),
-        icon: Icon(icon, color: color, size: 48),
-        title: Text(
-          alert.levelLabel,
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 2,
-          ),
-        ),
-        content: Text(
-          alert.message,
-          style: const TextStyle(color: Colors.white, fontSize: 16),
-          textAlign: TextAlign.center,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('OK', style: TextStyle(color: color, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
+      );
+      if (_alerts.length > 12) {
+        _alerts.removeRange(12, _alerts.length);
+      }
+    });
   }
 
   void _onBluetoothTap() async {
@@ -113,6 +131,15 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
       await _ble.disconnect();
     } else if (_bleState == 'Disconnected' || _bleState == 'Not found' || _bleState == 'Connection failed') {
       await _ble.scanAndConnect();
+    }
+  }
+
+  void _onJetsonWebSocketTap() async {
+    final isActive = _jetsonWsState == 'Connected' || _jetsonWsState == 'Connecting…' || _jetsonWsState == 'Reconnecting…';
+    if (isActive) {
+      await _jetsonWs.disconnect();
+    } else {
+      await _jetsonWs.connect();
     }
   }
 
@@ -215,6 +242,18 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
             ),
           ),
           IconButton(
+            onPressed: _onJetsonWebSocketTap,
+            tooltip: _jetsonWsState == 'Connected' ? 'Disconnect Jetson WebSocket' : 'Connect Jetson WebSocket',
+            icon: Icon(
+              _jetsonWsState == 'Connected'
+                  ? Icons.wifi_tethering
+                  : _jetsonWsState == 'Connecting…' || _jetsonWsState == 'Reconnecting…'
+                      ? Icons.sync
+                      : Icons.wifi_tethering_off,
+              color: _jetsonWsState == 'Connected' ? _accentBlue : Colors.black,
+            ),
+          ),
+          IconButton(
             onPressed: _loadLocationOnce,
             icon: const Icon(Icons.my_location, color: Colors.black),
           ),
@@ -244,9 +283,13 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
                     label: "BLE",
                     value: _bleState,
                   ),
+                  _StatusChip(
+                    label: "Jetson WS",
+                    value: _jetsonWsState,
+                  ),
                   const _StatusChip(label: "Face", value: "Detected"),
                   const _StatusChip(label: "Eyes", value: "Open"),
-                  const _StatusChip(label: "Alert", value: "None"),
+                  _StatusChip(label: "Alert", value: _latestAlertLevel),
                   _StatusChip(
                     label: "Lat",
                     value: _latText ?? (_locErr == null ? "Loading…" : "Unavailable"),
@@ -264,6 +307,17 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
                     value: _tempText ?? (_weatherErr == null ? "Loading…" : "Unavailable"),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              _AlertsCard(
+                alerts: _alerts,
+                onClear: () {
+                  if (!mounted) return;
+                  setState(() {
+                    _alerts.clear();
+                    _latestAlertLevel = 'None';
+                  });
+                },
               ),
               const SizedBox(height: 24),
             ],
@@ -358,7 +412,7 @@ class _HeaderCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: _accentBlue.withOpacity(0.12),
+                color: _accentBlue.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: const Text(
@@ -487,6 +541,137 @@ class _StatusChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DashboardAlert {
+  final int level;
+  final String levelLabel;
+  final String message;
+  final String source;
+  final DateTime timestamp;
+
+  const _DashboardAlert({
+    required this.level,
+    required this.levelLabel,
+    required this.message,
+    required this.source,
+    required this.timestamp,
+  });
+}
+
+class _AlertsCard extends StatelessWidget {
+  final List<_DashboardAlert> alerts;
+  final VoidCallback onClear;
+
+  const _AlertsCard({
+    required this.alerts,
+    required this.onClear,
+  });
+
+  Color _levelColor(int level) {
+    if (level >= 2) return const Color(0xFFEF4444);
+    if (level == 1) return const Color(0xFFF59E0B);
+    return _accentBlue;
+  }
+
+  IconData _levelIcon(int level) {
+    if (level >= 2) return Icons.warning_rounded;
+    if (level == 1) return Icons.error_outline;
+    return Icons.info_outline;
+  }
+
+  String _formatTime(DateTime t) {
+    final h = t.hour.toString().padLeft(2, '0');
+    final m = t.minute.toString().padLeft(2, '0');
+    final s = t.second.toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: _surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: _border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.notifications_active_outlined, color: _accentBlue),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Live Alerts',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (alerts.isNotEmpty)
+                  TextButton(
+                    onPressed: onClear,
+                    child: const Text('Clear'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (alerts.isEmpty)
+              Text(
+                'No alerts yet. Incoming BLE or Jetson WebSocket alerts will appear here.',
+                style: TextStyle(color: _black(0.58)),
+              )
+            else
+              SizedBox(
+                height: 170,
+                child: ListView.separated(
+                  itemCount: alerts.length,
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 10, color: _border),
+                  itemBuilder: (context, i) {
+                    final a = alerts[i];
+                    final c = _levelColor(a.level);
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(_levelIcon(a.level), color: c, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${a.levelLabel} • ${a.source} • ${_formatTime(a.timestamp)}',
+                                style: TextStyle(
+                                  color: c,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                a.message,
+                                style: TextStyle(color: _black(0.76)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

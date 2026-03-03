@@ -66,7 +66,9 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
 
       setState(() => _status = 'Getting current position…');
       final p = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
 
       setState(() {
@@ -239,7 +241,7 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                             Polyline(
                               points: _route,
                               strokeWidth: 9,
-                              color: Colors.black.withOpacity(0.22),
+                              color: Colors.black.withValues(alpha: 0.22),
                               strokeCap: StrokeCap.round,
                               strokeJoin: StrokeJoin.round,
                             ),
@@ -308,10 +310,10 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.95),
+                        color: Colors.white.withValues(alpha: 0.95),
                         borderRadius: BorderRadius.circular(10),
                         border:
-                            Border.all(color: Colors.black.withOpacity(0.12)),
+                            Border.all(color: Colors.black.withValues(alpha: 0.12)),
                         boxShadow: const [
                           BoxShadow(blurRadius: 12, color: Colors.black12),
                         ],
@@ -356,10 +358,10 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.88),
+                        color: Colors.white.withValues(alpha: 0.88),
                         borderRadius: BorderRadius.circular(10),
                         border:
-                            Border.all(color: Colors.black.withOpacity(0.10)),
+                            Border.all(color: Colors.black.withValues(alpha: 0.10)),
                       ),
                       child: const Text(
                         '© OpenStreetMap contributors • © CARTO',

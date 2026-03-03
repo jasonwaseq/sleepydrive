@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'live_monitor_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -160,20 +159,20 @@ class _FlatField extends StatelessWidget {
         style: const TextStyle(color: Colors.black, fontSize: 20),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: TextStyle(color: Colors.black.withOpacity(0.55)),
+          hintStyle: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
           filled: true,
-          fillColor: Colors.white.withOpacity(0.95),
+          fillColor: Colors.white.withValues(alpha: 0.95),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(color: Colors.black.withOpacity(0.12)),
+            borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(color: Colors.black.withOpacity(0.12)),
+            borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(color: Colors.black.withOpacity(0.25)),
+            borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.25)),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         ),
