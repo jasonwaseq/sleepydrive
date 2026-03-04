@@ -130,6 +130,12 @@ pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8080 --reload
 ```
 
+On Windows with Python 3.13, prefer:
+
+```bash
+python run_server.py
+```
+
 ## Jetson uplink publisher example
 
 Use the helper publisher:
