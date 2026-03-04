@@ -4,7 +4,7 @@ This repo will compile all the work done for this class and then we'll split it 
 
 # How to run:   
 
-on one machine to run sever:    
+on one machine to run sever (not needed since hosted on domain):    
 cd backend\realtime   
 python -m venv .venv   
 .\.venv\Scripts\Activate.ps1   
@@ -32,7 +32,7 @@ python run_server.py
 or docker if youre weird:   
 docker compose up --build   
 
-any machine:           
+any machine:    This is the command to run !!!          
 
  cd frontend\drowsiness_guide   
 
