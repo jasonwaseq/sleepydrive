@@ -28,6 +28,18 @@ class JetsonAlert {
   }
 }
 
+class JetsonPresence {
+  final String sourceId;
+  final bool online;
+  final DateTime timestamp;
+
+  JetsonPresence({
+    required this.sourceId,
+    required this.online,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+}
+
 class JetsonWebSocketService {
   JetsonWebSocketService({
     required Uri uri,
@@ -43,6 +55,7 @@ class JetsonWebSocketService {
   Timer? _reconnectTimer;
 
   final _alertCtrl = StreamController<JetsonAlert>.broadcast();
+  final _presenceCtrl = StreamController<JetsonPresence>.broadcast();
   final _stateCtrl = StreamController<String>.broadcast();
 
   bool _disposed = false;
@@ -50,6 +63,7 @@ class JetsonWebSocketService {
   String _currentState = 'Disconnected';
 
   Stream<JetsonAlert> get alerts => _alertCtrl.stream;
+  Stream<JetsonPresence> get presence => _presenceCtrl.stream;
   Stream<String> get connectionState => _stateCtrl.stream;
   String get currentState => _currentState;
 
@@ -120,6 +134,11 @@ class JetsonWebSocketService {
 
   void _onMessage(dynamic raw) {
     try {
+      final presence = _parsePresence(raw);
+      if (presence != null && !_presenceCtrl.isClosed) {
+        _presenceCtrl.add(presence);
+      }
+
       final alert = _parseAlert(raw);
       if (alert != null && !_alertCtrl.isClosed) {
         _alertCtrl.add(alert);
@@ -171,6 +190,43 @@ class JetsonWebSocketService {
     }
 
     return JetsonAlert(level: 1, message: text, timestamp: DateTime.now());
+  }
+
+  JetsonPresence? _parsePresence(dynamic raw) {
+    if (raw == null) return null;
+
+    String text;
+    if (raw is String) {
+      text = raw.trim();
+    } else if (raw is List<int>) {
+      text = utf8.decode(raw, allowMalformed: true).trim();
+    } else {
+      text = raw.toString().trim();
+    }
+    if (text.isEmpty || !(text.startsWith('{') && text.endsWith('}'))) return null;
+
+    try {
+      final decoded = _asStringDynamicMap(jsonDecode(text));
+      if (decoded == null) return null;
+
+      final type = (decoded['type'] ?? '').toString().trim().toLowerCase();
+      Map<String, dynamic>? payload;
+      if (type == 'jetson_presence') {
+        payload = _asStringDynamicMap(decoded['data']);
+      } else if (type == 'presence' || type == 'status' || type == 'heartbeat') {
+        payload = decoded;
+      } else {
+        return null;
+      }
+      if (payload == null) return null;
+
+      final sourceId = (payload['source_id'] ?? payload['device_id'] ?? 'jetson').toString();
+      final online = _parseOnline(payload['online'] ?? payload['status'], defaultValue: type == 'heartbeat');
+      final ts = _parseTimestamp(payload['event_ts'] ?? payload['timestamp'] ?? payload['ts']);
+      return JetsonPresence(sourceId: sourceId, online: online, timestamp: ts);
+    } catch (_) {
+      return null;
+    }
   }
 
   Map<String, dynamic>? _asStringDynamicMap(dynamic raw) {
@@ -227,6 +283,17 @@ class JetsonWebSocketService {
     }
   }
 
+  bool _parseOnline(dynamic raw, {bool defaultValue = true}) {
+    if (raw is bool) return raw;
+    if (raw == null) return defaultValue;
+    final text = raw.toString().trim().toLowerCase();
+    if (text == 'online' || text == 'up' || text == 'connected') return true;
+    if (text == 'offline' || text == 'down' || text == 'disconnected') return false;
+    if (text == 'true' || text == '1' || text == 'yes' || text == 'on') return true;
+    if (text == 'false' || text == '0' || text == 'no' || text == 'off') return false;
+    return defaultValue;
+  }
+
   String _parseMessage(dynamic raw) {
     if (raw == null) return 'Alert';
     final text = raw.toString().trim();
@@ -276,6 +343,7 @@ class JetsonWebSocketService {
     _socketSub?.cancel();
     _channel?.sink.close();
     _alertCtrl.close();
+    _presenceCtrl.close();
     _stateCtrl.close();
   }
 }

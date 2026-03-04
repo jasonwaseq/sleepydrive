@@ -49,6 +49,19 @@ def _env_bool_names(names: tuple[str, ...], default: bool) -> bool:
     return default
 
 
+def _derive_status_topic(alert_topic: str) -> str:
+    topic = alert_topic.strip()
+    if not topic:
+        return "sleepydrive/status/+"
+    if "/alerts/" in topic:
+        return topic.replace("/alerts/", "/status/")
+    if topic.endswith("/alerts/+"):
+        return f"{topic[:-9]}/status/+"
+    if topic.endswith("/alerts/#"):
+        return f"{topic[:-9]}/status/#"
+    return "sleepydrive/status/+"
+
+
 @dataclass(frozen=True)
 class Settings:
     app_host: str
@@ -73,9 +86,18 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         topics_raw = _first_env(("MQTT_TOPICS", "MP_QTT_TOPIC"), "sleepydrive/alerts/+")
-        topics = tuple(part.strip() for part in topics_raw.split(",") if part.strip())
-        if not topics:
-            topics = ("sleepydrive/alerts/+",)
+        alert_topics = tuple(part.strip() for part in topics_raw.split(",") if part.strip())
+        if not alert_topics:
+            alert_topics = ("sleepydrive/alerts/+",)
+
+        status_topics_raw = _first_env(("MQTT_STATUS_TOPICS", "MP_QTT_STATUS_TOPIC"), "")
+        if status_topics_raw.strip():
+            status_topics = tuple(part.strip() for part in status_topics_raw.split(",") if part.strip())
+        else:
+            status_topics = tuple(_derive_status_topic(topic) for topic in alert_topics)
+
+        # Preserve order and deduplicate.
+        topics = tuple(dict.fromkeys((*alert_topics, *status_topics)))
 
         cors_raw = os.getenv("CORS_ALLOW_ORIGINS", "*")
         cors_allow_origins = tuple(part.strip() for part in cors_raw.split(",") if part.strip())

@@ -51,9 +51,14 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindi
   String _jetsonWsState = 'Disconnected';
   StreamSubscription? _jetsonWsStateSub;
   StreamSubscription? _jetsonWsAlertSub;
+  StreamSubscription? _jetsonPresenceSub;
+  Timer? _jetsonPresenceTimer;
 
   String _latestAlertLevel = 'None';
+  String _jetsonDeviceState = 'Offline';
+  DateTime? _jetsonLastSeen;
   final List<_DashboardAlert> _alerts = [];
+  static const Duration _jetsonStaleAfter = Duration(seconds: 30);
 
   bool _wsIsConnected(String s) => s == 'Connected';
   bool _wsIsBusy(String s) =>
@@ -95,6 +100,8 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindi
         alertTimestamp: alert.timestamp,
       );
     });
+    _jetsonPresenceSub = _jetsonWs.presence.listen(_handleJetsonPresence);
+    _startJetsonPresenceWatchdog();
     _jetsonWs.connect();
   }
 
@@ -105,6 +112,8 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindi
     _bleAlertSub?.cancel();
     _jetsonWsStateSub?.cancel();
     _jetsonWsAlertSub?.cancel();
+    _jetsonPresenceSub?.cancel();
+    _jetsonPresenceTimer?.cancel();
     _ble.dispose();
     _jetsonWs.dispose();
     super.dispose();
@@ -145,6 +154,28 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindi
       }
     });
     _showAlertSnackBar(level: level, levelLabel: levelLabel, message: message, source: source);
+  }
+
+  void _handleJetsonPresence(JetsonPresence presence) {
+    if (!mounted) return;
+    setState(() {
+      _jetsonLastSeen = presence.timestamp;
+      _jetsonDeviceState = presence.online ? 'Online' : 'Offline';
+    });
+  }
+
+  void _startJetsonPresenceWatchdog() {
+    _jetsonPresenceTimer?.cancel();
+    _jetsonPresenceTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      final lastSeen = _jetsonLastSeen;
+      final stale = lastSeen == null || DateTime.now().difference(lastSeen) > _jetsonStaleAfter;
+      if (stale && _jetsonDeviceState != 'Offline') {
+        setState(() {
+          _jetsonDeviceState = 'Offline';
+        });
+      }
+    });
   }
 
   void _showAlertSnackBar({
@@ -338,6 +369,10 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindi
                   _StatusChip(
                     label: "Jetson WS",
                     value: _jetsonWsState,
+                  ),
+                  _StatusChip(
+                    label: "Jetson Device",
+                    value: _jetsonDeviceState,
                   ),
                   const _StatusChip(label: "Face", value: "Detected"),
                   const _StatusChip(label: "Eyes", value: "Open"),

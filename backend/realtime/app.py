@@ -31,7 +31,12 @@ def create_app() -> FastAPI:
     repo = AlertRepository(db)
     hub = WebSocketHub()
     stop_event = asyncio.Event()
-    consumer = MQTTConsumer(settings=settings, repository=repo, on_event=hub.broadcast_alert)
+    consumer = MQTTConsumer(
+        settings=settings,
+        repository=repo,
+        on_event=hub.broadcast_alert,
+        on_presence=hub.broadcast_presence,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -92,6 +97,7 @@ def create_app() -> FastAPI:
             if replay_count > 0:
                 events = await repo.recent(limit=replay_count)
                 await hub.send_replay(websocket=websocket, events=reversed(events))
+            await hub.send_presence_snapshot(websocket=websocket)
 
             # Keep socket open; clients can optionally send pings.
             while True:

@@ -70,6 +70,26 @@ def _device_from_topic(topic: str) -> str:
     return parts[-1]
 
 
+def _coerce_online(raw: Any, default: bool = True) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return default
+    text = str(raw).strip().lower()
+    if text in {"1", "true", "yes", "on", "online", "up", "connected"}:
+        return True
+    if text in {"0", "false", "no", "off", "offline", "down", "disconnected"}:
+        return False
+    return default
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 @dataclass(frozen=True)
 class AlertEvent:
     device_id: str
@@ -107,6 +127,81 @@ class AlertEvent:
         }
 
 
+@dataclass(frozen=True)
+class JetsonPresence:
+    source_id: str
+    online: bool
+    event_ts: datetime
+    topic: str
+    source: str = "jetson"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "source_id": self.source_id,
+            "online": self.online,
+            "event_ts": self.event_ts.isoformat(),
+            "topic": self.topic,
+            "source": self.source,
+            "metadata": self.metadata,
+        }
+
+
+def parse_presence_payload(topic: str, payload: bytes) -> JetsonPresence | None:
+    text = payload.decode("utf-8", errors="replace").strip()
+    if not text or not (text.startswith("{") and text.endswith("}")):
+        return None
+
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+
+    type_text = str(obj.get("type") or obj.get("event_type") or "").strip().lower()
+    is_status_topic = "/status/" in topic
+    if type_text not in {"presence", "status", "heartbeat"} and not is_status_topic:
+        return None
+
+    source_id = str(obj.get("source_id") or obj.get("device_id") or _device_from_topic(topic))
+    if type_text == "heartbeat":
+        online = True
+    else:
+        raw_online = obj["online"] if "online" in obj else obj.get("status")
+        online = _coerce_online(raw_online, default=True)
+
+    known = {
+        "type",
+        "event_type",
+        "source_id",
+        "device_id",
+        "online",
+        "status",
+        "event_ts",
+        "timestamp",
+        "ts",
+        "source",
+        "topic",
+        "metadata",
+    }
+    metadata = obj.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    for key, value in obj.items():
+        if key not in known:
+            metadata[key] = value
+
+    return JetsonPresence(
+        source_id=source_id,
+        online=online,
+        event_ts=_parse_ts(obj.get("event_ts") or obj.get("timestamp") or obj.get("ts")),
+        topic=str(obj.get("topic") or topic),
+        source=str(obj.get("source") or "jetson"),
+        metadata=metadata,
+    )
+
+
 def parse_mqtt_payload(topic: str, payload: bytes) -> AlertEvent:
     text = payload.decode("utf-8", errors="replace").strip()
     now = utcnow()
@@ -142,12 +237,12 @@ def parse_mqtt_payload(topic: str, payload: bytes) -> AlertEvent:
                     metadata[key] = value
 
             return AlertEvent(
-                device_id=str(obj.get("device_id") or default_device),
-                level=_coerce_level(obj.get("level") or obj.get("severity") or obj.get("risk")),
-                message=str(obj.get("message") or obj.get("msg") or obj.get("alert") or obj.get("text") or "Alert"),
+                device_id=str(obj.get("device_id") or obj.get("source_id") or default_device),
+                level=_coerce_level(_first_present(obj.get("level"), obj.get("severity"), obj.get("risk"))),
+                message=str(_first_present(obj.get("message"), obj.get("msg"), obj.get("alert"), obj.get("text")) or "Alert"),
                 source=str(obj.get("source") or "jetson"),
                 topic=str(obj.get("topic") or topic),
-                event_ts=_parse_ts(obj.get("event_ts") or obj.get("timestamp") or obj.get("ts")),
+                event_ts=_parse_ts(_first_present(obj.get("event_ts"), obj.get("timestamp"), obj.get("ts"))),
                 received_ts=now,
                 metadata=metadata,
             )
@@ -170,4 +265,3 @@ def parse_mqtt_payload(topic: str, payload: bytes) -> AlertEvent:
         received_ts=now,
         metadata={},
     )
-

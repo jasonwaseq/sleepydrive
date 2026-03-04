@@ -55,6 +55,14 @@ def _default_topic_prefix() -> str:
     return first.replace("/+", "")
 
 
+def _derive_status_topic_prefix(alert_topic_prefix: str) -> str:
+    if "/alerts/" in alert_topic_prefix:
+        return alert_topic_prefix.replace("/alerts/", "/status/")
+    if alert_topic_prefix.endswith("/alerts"):
+        return f"{alert_topic_prefix[:-7]}/status"
+    return "sleepydrive/status"
+
+
 def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -76,6 +84,7 @@ class JetsonAlertDispatcher:
         broker_host: str,
         broker_port: int,
         topic_prefix: str,
+        status_topic_prefix: str,
         source_id: str,
         username: str | None = None,
         password: str | None = None,
@@ -89,6 +98,7 @@ class JetsonAlertDispatcher:
         self.broker_host = broker_host
         self.broker_port = broker_port
         self.topic_prefix = topic_prefix.rstrip("/")
+        self.status_topic_prefix = status_topic_prefix.rstrip("/")
         self.source_id = source_id
         self.username = username
         self.password = password
@@ -107,6 +117,13 @@ class JetsonAlertDispatcher:
             broker_host=_first_env(("MP_QTT_HOST", "MQTT_HOST"), "localhost"),
             broker_port=_env_int(("MP_QTT_PORT", "MQTT_PORT"), 1883),
             topic_prefix=_default_topic_prefix(),
+            status_topic_prefix=_first_env(
+                ("MP_QTT_STATUS_TOPIC", "MQTT_STATUS_TOPICS"),
+                _derive_status_topic_prefix(_default_topic_prefix()),
+            )
+            .split(",")[0]
+            .replace("/+", "")
+            .replace("/#", ""),
             source_id=source_id,
             username=_first_env(("MP_QTT_USERNAME", "MQTT_USERNAME"), "") or None,
             password=_first_env(("MP_QTT_PASSWORD", "MQTT_PASSWORD"), "") or None,
@@ -122,6 +139,10 @@ class JetsonAlertDispatcher:
     def topic(self) -> str:
         return f"{self.topic_prefix}/{self.source_id}"
 
+    @property
+    def status_topic(self) -> str:
+        return f"{self.status_topic_prefix}/{self.source_id}"
+
     def connect(self) -> None:
         if self._client is not None:
             return
@@ -134,15 +155,30 @@ class JetsonAlertDispatcher:
             if self.tls_insecure:
                 client.tls_insecure_set(True)
 
+        # Publish an offline status if this client disconnects unexpectedly.
+        offline_payload = json.dumps(
+            {
+                "type": "presence",
+                "source_id": self.source_id,
+                "online": False,
+                "source": self.source,
+                "event_ts": _utc_iso(),
+            },
+            separators=(",", ":"),
+        )
+        client.will_set(self.status_topic, payload=offline_payload, qos=self.qos, retain=True)
+
         client.connect(self.broker_host, self.broker_port, keepalive=30)
         client.loop_start()
         self._client = client
+        self.publish_presence(online=True, metadata={"state": "connected"}, retain=True)
         log.info(
-            "Jetson dispatcher connected host=%s port=%s tls=%s topic=%s",
+            "Jetson dispatcher connected host=%s port=%s tls=%s topic=%s status_topic=%s",
             self.broker_host,
             self.broker_port,
             self.tls_enabled,
             self.topic,
+            self.status_topic,
         )
 
     def publish_alert(self, *, level: int, message: str, metadata: dict | None = None) -> bool:
@@ -175,14 +211,43 @@ class JetsonAlertDispatcher:
         )
         return ok
 
+    def publish_presence(self, *, online: bool, metadata: dict | None = None, retain: bool = True) -> bool:
+        if self._client is None:
+            self.connect()
+        assert self._client is not None
+
+        payload = {
+            "type": "presence",
+            "source_id": self.source_id,
+            "online": bool(online),
+            "source": self.source,
+            "event_ts": _utc_iso(),
+        }
+        if metadata:
+            payload["metadata"] = metadata
+        payload_str = json.dumps(payload, separators=(",", ":"))
+
+        info = self._client.publish(self.status_topic, payload=payload_str, qos=self.qos, retain=retain)
+        info.wait_for_publish(timeout=5.0)
+        ok = info.rc == mqtt.MQTT_ERR_SUCCESS
+        log.info(
+            "publish_presence rc=%s ok=%s topic=%s mid=%s payload=%s",
+            info.rc,
+            ok,
+            self.status_topic,
+            info.mid,
+            payload_str,
+        )
+        return ok
+
     def close(self) -> None:
         if self._client is None:
             return
         try:
+            self.publish_presence(online=False, metadata={"state": "closed"}, retain=True)
             # Give in-flight publishes a small flush window.
             time.sleep(0.1)
             self._client.loop_stop()
             self._client.disconnect()
         finally:
             self._client = None
-

@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from aiomqtt import Client, MqttError
 
 from repository import AlertRepository
-from schemas import AlertEvent, parse_mqtt_payload
+from schemas import AlertEvent, JetsonPresence, parse_mqtt_payload, parse_presence_payload
 from settings import Settings
 
 log = logging.getLogger("realtime.mqtt")
@@ -20,10 +20,12 @@ class MQTTConsumer:
         settings: Settings,
         repository: AlertRepository,
         on_event: Callable[[AlertEvent], Awaitable[None]],
+        on_presence: Callable[[JetsonPresence], Awaitable[None]] | None = None,
     ):
         self._settings = settings
         self._repository = repository
         self._on_event = on_event
+        self._on_presence = on_presence
 
     async def run(self, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():
@@ -93,6 +95,13 @@ class MQTTConsumer:
         return context
 
     async def _handle_message(self, topic: str, payload: bytes) -> None:
+        presence = parse_presence_payload(topic=topic, payload=payload)
+        if presence is not None:
+            if self._on_presence is not None:
+                await self._on_presence(presence)
+            log.info("Presence update: source=%s online=%s", presence.source_id, presence.online)
+            return
+
         event = parse_mqtt_payload(topic=topic, payload=payload)
         saved = await self._repository.insert(event)
         await self._on_event(saved)

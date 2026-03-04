@@ -12,13 +12,20 @@ pip install -r requirements.txt
 
 $env:DATABASE_URL='postgresql://neondb_owner:npg_m0OGaWE8zXfY@ep-falling-sea-akrw78zs-pooler.c-3.us-west-2.aws.neon.tech/neondb?sslmode=require'   
 
-$env:MP_QTT_HOST='73797b78ceac47e998c30ac034930c26.s1.eu.hivemq.cloud'      
-$env:MP_QTT_PORT='8883'     
-$env:MP_QTT_TLS='true'    
-$env:MP_QTT_TOPIC='sleepydrive/alerts/+'    
-$env:MP_SOURCE_ID='jetson-01'   
-$env:MP_QTT_USERNAME='group7'    
-$env:MP_QTT_PASSWORD='group7BananaSlug'   
+$env:DATABASE_URL='postgresql://<user>:<pass>@<host>/<db>?sslmode=require'
+
+$env:MQTT_HOST='73797b78ceac47e998c30ac034930c26.s1.eu.hivemq.cloud'
+$env:MQTT_PORT='8883'
+$env:MQTT_TLS='true'
+$env:MQTT_USERNAME='group7'
+$env:MQTT_PASSWORD='group7BananaSlug'
+$env:MQTT_TOPICS='sleepydrive/alerts/+'
+$env:MQTT_STATUS_TOPICS='sleepydrive/status/+'
+$env:MQTT_CLIENT_ID='sleepydrive-realtime-gateway-local'
+$env:MQTT_QOS='1'
+$env:WS_DEFAULT_REPLAY='0'
+$env:CORS_ALLOW_ORIGINS='*'
+   
 
 python run_server.py   
 

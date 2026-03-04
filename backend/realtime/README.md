@@ -6,6 +6,7 @@ This service implements:
 2. Event consumer (normalize + validate payloads)
 3. Postgres persistence (`alert_events`)
 4. WebSocket downlink gateway (`/ws/alerts`)
+5. Jetson presence tracking (`jetson_presence` websocket frames)
 
 ## Architecture
 
@@ -40,6 +41,12 @@ Topic format:
 sleepydrive/alerts/<device_id>
 ```
 
+Presence/status topic format:
+
+```text
+sleepydrive/status/<device_id>
+```
+
 ## Environment variable naming
 
 The realtime backend supports both naming styles:
@@ -71,6 +78,7 @@ Set these before `docker compose up --build realtime`:
 set MP_QTT_HOST=broker.example.com
 set MP_QTT_PORT=8883
 set MP_QTT_TOPIC=sleepydrive/alerts/+
+set MP_QTT_STATUS_TOPIC=sleepydrive/status/+
 set MP_QTT_USERNAME=your_user
 set MP_QTT_PASSWORD=your_password
 set MP_QTT_TLS=true
@@ -97,6 +105,7 @@ PowerShell:
 $env:MP_QTT_HOST="<your-cluster-url>"
 $env:MP_QTT_PORT="8883"
 $env:MP_QTT_TOPIC="sleepydrive/alerts/+"
+$env:MP_QTT_STATUS_TOPIC="sleepydrive/status/+"
 $env:MP_SOURCE_ID="jetson-01"
 $env:MP_QTT_USERNAME="<your-username>"
 $env:MP_QTT_PASSWORD="<your-password>"
@@ -109,6 +118,7 @@ Linux/macOS:
 export MP_QTT_HOST="<your-cluster-url>"
 export MP_QTT_PORT="8883"
 export MP_QTT_TOPIC="sleepydrive/alerts/+"
+export MP_QTT_STATUS_TOPIC="sleepydrive/status/+"
 export MP_SOURCE_ID="jetson-01"
 export MP_QTT_USERNAME="<your-username>"
 export MP_QTT_PASSWORD="<your-password>"
@@ -155,6 +165,8 @@ dispatcher = JetsonAlertDispatcher.from_env()
 dispatcher.connect()
 ```
 
+`connect()` now also publishes a retained online presence event and sets an MQTT last-will offline presence event.
+
 Call this in your detection callback:
 
 ```python
@@ -171,10 +183,18 @@ Shutdown cleanly on process exit:
 dispatcher.close()
 ```
 
+`close()` publishes an offline presence event.
+
 Expected log for each event:
 
 ```text
 publish_alert rc=0 ok=True topic=sleepydrive/alerts/jetson-01 ...
+```
+
+Presence logs:
+
+```text
+publish_presence rc=0 ok=True topic=sleepydrive/status/jetson-01 ...
 ```
 
 ## Flutter client URL

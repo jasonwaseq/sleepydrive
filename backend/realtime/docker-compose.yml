@@ -38,10 +38,12 @@ services:
       MQTT_HOST: ${MQTT_HOST:-}
       MQTT_PORT: ${MQTT_PORT:-}
       MQTT_TOPICS: ${MQTT_TOPICS:-}
+      MQTT_STATUS_TOPICS: ${MQTT_STATUS_TOPICS:-}
       MQTT_QOS: ${MQTT_QOS:-}
       MP_QTT_HOST: ${MP_QTT_HOST:-mosquitto}
       MP_QTT_PORT: ${MP_QTT_PORT:-1883}
       MP_QTT_TOPIC: ${MP_QTT_TOPIC:-sleepydrive/alerts/+}
+      MP_QTT_STATUS_TOPIC: ${MP_QTT_STATUS_TOPIC:-sleepydrive/status/+}
       MP_QTT_QOS: ${MP_QTT_QOS:-1}
       MQTT_USERNAME: ${MQTT_USERNAME:-}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
