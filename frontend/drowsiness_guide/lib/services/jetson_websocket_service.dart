@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:web_socket_channel/io.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 class JetsonAlert {
   final int level;
@@ -37,7 +37,7 @@ class JetsonWebSocketService {
   final Uri _uri;
   final Duration _reconnectDelay;
 
-  IOWebSocketChannel? _channel;
+  WebSocketChannel? _channel;
   StreamSubscription? _socketSub;
   Timer? _reconnectTimer;
 
@@ -72,11 +72,7 @@ class JetsonWebSocketService {
     _setState('Connecting…');
 
     try {
-      final channel = IOWebSocketChannel.connect(
-        _uri,
-        connectTimeout: const Duration(seconds: 6),
-        pingInterval: const Duration(seconds: 10),
-      );
+      final channel = WebSocketChannel.connect(_uri);
       _channel = channel;
       await channel.ready.timeout(const Duration(seconds: 8));
       if (_disposed || _manualDisconnect) {
