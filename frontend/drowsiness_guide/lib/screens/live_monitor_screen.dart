@@ -124,6 +124,36 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
         _alerts.removeRange(12, _alerts.length);
       }
     });
+    _showAlertSnackBar(level: level, levelLabel: levelLabel, message: message, source: source);
+  }
+
+  void _showAlertSnackBar({
+    required int level,
+    required String levelLabel,
+    required String message,
+    required String source,
+  }) {
+    if (!mounted) return;
+
+    final bg = level >= 2
+        ? const Color(0xFFB91C1C)
+        : level == 1
+            ? const Color(0xFFB45309)
+            : const Color(0xFF1E3A8A);
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+          backgroundColor: bg,
+          content: Text('$levelLabel • $source: $message'),
+        ),
+      );
   }
 
   void _onBluetoothTap() async {
@@ -311,6 +341,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
               const SizedBox(height: 12),
               _AlertsCard(
                 alerts: _alerts,
+                wsState: _jetsonWsState,
                 onClear: () {
                   if (!mounted) return;
                   setState(() {
@@ -564,10 +595,12 @@ class _DashboardAlert {
 
 class _AlertsCard extends StatelessWidget {
   final List<_DashboardAlert> alerts;
+  final String wsState;
   final VoidCallback onClear;
 
   const _AlertsCard({
     required this.alerts,
+    required this.wsState,
     required this.onClear,
   });
 
@@ -617,6 +650,22 @@ class _AlertsCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _black(0.06),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    wsState,
+                    style: TextStyle(
+                      color: _black(0.7),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
                 if (alerts.isNotEmpty)
                   TextButton(
                     onPressed: onClear,

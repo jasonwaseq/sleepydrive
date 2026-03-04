@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
 
 class JetsonAlert {
   final int level;
@@ -37,7 +37,7 @@ class JetsonWebSocketService {
   final Uri _uri;
   final Duration _reconnectDelay;
 
-  WebSocketChannel? _channel;
+  IOWebSocketChannel? _channel;
   StreamSubscription? _socketSub;
   Timer? _reconnectTimer;
 
@@ -72,7 +72,11 @@ class JetsonWebSocketService {
     _setState('Connecting…');
 
     try {
-      final channel = WebSocketChannel.connect(_uri);
+      final channel = IOWebSocketChannel.connect(
+        _uri,
+        connectTimeout: const Duration(seconds: 6),
+        pingInterval: const Duration(seconds: 10),
+      );
       _channel = channel;
       _setState('Connected');
 
@@ -111,9 +115,13 @@ class JetsonWebSocketService {
   }
 
   void _onMessage(dynamic raw) {
-    final alert = _parseAlert(raw);
-    if (alert != null && !_alertCtrl.isClosed) {
-      _alertCtrl.add(alert);
+    try {
+      final alert = _parseAlert(raw);
+      if (alert != null && !_alertCtrl.isClosed) {
+        _alertCtrl.add(alert);
+      }
+    } catch (_) {
+      // Ignore malformed frame payloads to keep stream alive.
     }
   }
 
