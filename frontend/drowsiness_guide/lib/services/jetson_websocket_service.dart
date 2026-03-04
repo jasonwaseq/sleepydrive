@@ -78,16 +78,23 @@ class JetsonWebSocketService {
         pingInterval: const Duration(seconds: 10),
       );
       _channel = channel;
+      await channel.ready.timeout(const Duration(seconds: 8));
+      if (_disposed || _manualDisconnect) {
+        await channel.sink.close();
+        return;
+      }
       _setState('Connected');
 
       _socketSub = channel.stream.listen(
         _onMessage,
-        onError: (_) => _handleSocketClosed('Connection error'),
+        onError: (error) => _handleSocketClosed(
+          'Connection error: ${_compactError(error)}',
+        ),
         onDone: () => _handleSocketClosed('Disconnected'),
         cancelOnError: false,
       );
-    } catch (_) {
-      _handleSocketClosed('Connection failed');
+    } catch (e) {
+      _handleSocketClosed('Connection failed: ${_compactError(e)}');
     }
   }
 
@@ -105,7 +112,7 @@ class JetsonWebSocketService {
       return;
     }
 
-    _setState('Reconnecting…');
+    _setState('Reconnecting… ($terminalState)');
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(_reconnectDelay, () {
       if (!_disposed && !_manualDisconnect) {
@@ -132,7 +139,7 @@ class JetsonWebSocketService {
     if (raw is String) {
       text = raw.trim();
     } else if (raw is List<int>) {
-      text = utf8.decode(raw).trim();
+      text = utf8.decode(raw, allowMalformed: true).trim();
     } else {
       text = raw.toString().trim();
     }
@@ -194,6 +201,13 @@ class JetsonWebSocketService {
     if (raw == null) return 'Alert';
     final text = raw.toString().trim();
     return text.isEmpty ? 'Alert' : text;
+  }
+
+  String _compactError(Object error) {
+    final text = error.toString().replaceAll('\n', ' ').trim();
+    if (text.isEmpty) return 'unknown';
+    if (text.length <= 90) return text;
+    return '${text.substring(0, 90)}…';
   }
 
   Future<void> disconnect() async {

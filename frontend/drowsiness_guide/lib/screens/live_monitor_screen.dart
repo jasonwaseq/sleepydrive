@@ -25,7 +25,9 @@ class LiveMonitorScreen extends StatefulWidget {
   State<LiveMonitorScreen> createState() => _LiveMonitorScreenState();
 }
 
-class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
+class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindingObserver {
+  static const String _jetsonWsUrl =
+      String.fromEnvironment('JETSON_WS_URL', defaultValue: 'ws://100.122.75.81:8765');
   String? _latText;
   String? _lonText;
   String? _locErr;
@@ -44,7 +46,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
 
   // ── Jetson WebSocket ──
   final JetsonWebSocketService _jetsonWs = JetsonWebSocketService(
-    uri: Uri.parse('ws://100.122.75.81:8765'),
+    uri: Uri.parse(_jetsonWsUrl),
   );
   String _jetsonWsState = 'Disconnected';
   StreamSubscription? _jetsonWsStateSub;
@@ -53,9 +55,14 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
   String _latestAlertLevel = 'None';
   final List<_DashboardAlert> _alerts = [];
 
+  bool _wsIsConnected(String s) => s == 'Connected';
+  bool _wsIsBusy(String s) =>
+      s.startsWith('Connecting…') || s.startsWith('Reconnecting…');
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadLocationOnce();
 
     // Listen for BLE connection state changes
@@ -92,6 +99,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _bleStateSub?.cancel();
     _bleAlertSub?.cancel();
     _jetsonWsStateSub?.cancel();
@@ -99,6 +107,16 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
     _ble.dispose();
     _jetsonWs.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final isConnected = _wsIsConnected(_jetsonWsState) || _wsIsBusy(_jetsonWsState);
+      if (!isConnected) {
+        _jetsonWs.connect();
+      }
+    }
   }
 
   void _handleIncomingAlert({
@@ -165,7 +183,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
   }
 
   void _onJetsonWebSocketTap() async {
-    final isActive = _jetsonWsState == 'Connected' || _jetsonWsState == 'Connecting…' || _jetsonWsState == 'Reconnecting…';
+    final isActive = _wsIsConnected(_jetsonWsState) || _wsIsBusy(_jetsonWsState);
     if (isActive) {
       await _jetsonWs.disconnect();
     } else {
@@ -273,14 +291,16 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
           ),
           IconButton(
             onPressed: _onJetsonWebSocketTap,
-            tooltip: _jetsonWsState == 'Connected' ? 'Disconnect Jetson WebSocket' : 'Connect Jetson WebSocket',
+            tooltip: _wsIsConnected(_jetsonWsState)
+                ? 'Disconnect Jetson WebSocket'
+                : 'Connect Jetson WebSocket',
             icon: Icon(
-              _jetsonWsState == 'Connected'
+              _wsIsConnected(_jetsonWsState)
                   ? Icons.wifi_tethering
-                  : _jetsonWsState == 'Connecting…' || _jetsonWsState == 'Reconnecting…'
+                  : _wsIsBusy(_jetsonWsState)
                       ? Icons.sync
                       : Icons.wifi_tethering_off,
-              color: _jetsonWsState == 'Connected' ? _accentBlue : Colors.black,
+              color: _wsIsConnected(_jetsonWsState) ? _accentBlue : Colors.black,
             ),
           ),
           IconButton(
@@ -342,6 +362,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
               _AlertsCard(
                 alerts: _alerts,
                 wsState: _jetsonWsState,
+                wsUrl: _jetsonWsUrl,
                 onClear: () {
                   if (!mounted) return;
                   setState(() {
@@ -596,11 +617,13 @@ class _DashboardAlert {
 class _AlertsCard extends StatelessWidget {
   final List<_DashboardAlert> alerts;
   final String wsState;
+  final String wsUrl;
   final VoidCallback onClear;
 
   const _AlertsCard({
     required this.alerts,
     required this.wsState,
+    required this.wsUrl,
     required this.onClear,
   });
 
@@ -672,6 +695,11 @@ class _AlertsCard extends StatelessWidget {
                     child: const Text('Clear'),
                   ),
               ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              wsUrl,
+              style: TextStyle(color: _black(0.52), fontSize: 11),
             ),
             const SizedBox(height: 8),
             if (alerts.isEmpty)
