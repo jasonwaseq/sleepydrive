@@ -27,7 +27,7 @@ class LiveMonitorScreen extends StatefulWidget {
 
 class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindingObserver {
   static const String _jetsonWsUrl =
-      String.fromEnvironment('JETSON_WS_URL', defaultValue: 'ws://100.122.75.81:8765');
+      String.fromEnvironment('JETSON_WS_URL', defaultValue: 'ws://localhost:8080/ws/alerts?replay=0');
   String? _latText;
   String? _lonText;
   String? _locErr;
@@ -92,6 +92,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindi
         levelLabel: alert.levelLabel,
         message: alert.message,
         source: 'Jetson WS',
+        alertTimestamp: alert.timestamp,
       );
     });
     _jetsonWs.connect();
@@ -124,6 +125,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindi
     required String levelLabel,
     required String message,
     required String source,
+    DateTime? alertTimestamp,
   }) {
     if (!mounted) return;
     setState(() {
@@ -135,7 +137,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> with WidgetsBindi
           levelLabel: levelLabel,
           message: message,
           source: source,
-          timestamp: DateTime.now(),
+          timestamp: alertTimestamp ?? DateTime.now(),
         ),
       );
       if (_alerts.length > 12) {

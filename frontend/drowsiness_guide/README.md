@@ -2,16 +2,23 @@
 
 This is the App that will display the nearby rest-stops
 
-## Jetson Tailnet WebSocket Alerts
+## Realtime Gateway WebSocket Alerts
 
-The app now listens for real-time Jetson alerts over:
+The app listens for real-time alerts from the backend gateway websocket:
 
-- `ws://100.122.75.81:8765`
+- `ws://<gateway-host>:8080/ws/alerts`
 
-Phone requirements for cross-network access:
+Set the URL at run time:
 
-- Tailscale app installed and connected.
-- Phone is on the same Tailnet as the Jetson machine.
+```bash
+flutter run --dart-define=JETSON_WS_URL=ws://<gateway-host>:8080/ws/alerts
+```
+
+For public internet access, use TLS:
+
+```bash
+flutter run --dart-define=JETSON_WS_URL=wss://<your-domain>/ws/alerts
+```
 
 TODO:
 - Display nearby rest stops

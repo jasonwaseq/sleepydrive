@@ -11,7 +11,8 @@ class JetsonAlert {
   JetsonAlert({
     required this.level,
     required this.message,
-  }) : timestamp = DateTime.now();
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
 
   String get levelLabel {
     switch (level) {
@@ -145,12 +146,17 @@ class JetsonWebSocketService {
     if (text.startsWith('{') && text.endsWith('}')) {
       try {
         final obj = jsonDecode(text);
-        if (obj is Map<String, dynamic>) {
-          final level = _parseLevel(obj['level'] ?? obj['severity'] ?? obj['risk']);
+        final decoded = _asStringDynamicMap(obj);
+        if (decoded != null) {
+          final payload = _extractAlertPayload(decoded);
+          if (payload == null) return null;
+
+          final level = _parseLevel(payload['level'] ?? payload['severity'] ?? payload['risk']);
           final msg = _parseMessage(
-            obj['message'] ?? obj['alert'] ?? obj['text'] ?? obj['msg'],
+            payload['message'] ?? payload['alert'] ?? payload['text'] ?? payload['msg'],
           );
-          return JetsonAlert(level: level, message: msg);
+          final ts = _parseTimestamp(payload['event_ts'] ?? payload['received_ts'] ?? payload['timestamp'] ?? payload['ts']);
+          return JetsonAlert(level: level, message: msg, timestamp: ts);
         }
       } catch (_) {
         // If JSON parsing fails, continue with fallback parsing.
@@ -161,10 +167,38 @@ class JetsonWebSocketService {
     if (pipe > 0) {
       final level = _parseLevel(text.substring(0, pipe));
       final msg = text.substring(pipe + 1).trim();
-      return JetsonAlert(level: level, message: msg.isEmpty ? 'Alert' : msg);
+      return JetsonAlert(level: level, message: msg.isEmpty ? 'Alert' : msg, timestamp: DateTime.now());
     }
 
-    return JetsonAlert(level: 1, message: text);
+    return JetsonAlert(level: 1, message: text, timestamp: DateTime.now());
+  }
+
+  Map<String, dynamic>? _asStringDynamicMap(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      try {
+        return Map<String, dynamic>.from(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _extractAlertPayload(Map<String, dynamic> obj) {
+    final typeRaw = obj['type'];
+    if (typeRaw != null) {
+      final type = typeRaw.toString().trim().toLowerCase();
+      if (type != 'alert') {
+        // Ignore non-alert frames like status/heartbeat envelopes.
+        return null;
+      }
+
+      final data = _asStringDynamicMap(obj['data']);
+      if (data != null) return data;
+    }
+
+    return obj;
   }
 
   int _parseLevel(dynamic raw) {
@@ -197,6 +231,25 @@ class JetsonWebSocketService {
     if (raw == null) return 'Alert';
     final text = raw.toString().trim();
     return text.isEmpty ? 'Alert' : text;
+  }
+
+  DateTime _parseTimestamp(dynamic raw) {
+    if (raw is DateTime) return raw;
+    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw, isUtc: true).toLocal();
+    if (raw is double) {
+      final ms = (raw * 1000).round();
+      return DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true).toLocal();
+    }
+    if (raw != null) {
+      final text = raw.toString().trim();
+      if (text.isNotEmpty) {
+        final parsed = DateTime.tryParse(text);
+        if (parsed != null) {
+          return parsed.toLocal();
+        }
+      }
+    }
+    return DateTime.now();
   }
 
   String _compactError(Object error) {

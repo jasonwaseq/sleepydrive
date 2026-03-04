@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sleepydrive}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sleepydrive}
+      POSTGRES_DB: ${POSTGRES_DB:-sleepydrive}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sleepydrive} -d ${POSTGRES_DB:-sleepydrive}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    ports:
+      - "5432:5432"
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    ports:
+      - "1883:1883"
+
+  realtime:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sleepydrive}:${POSTGRES_PASSWORD:-sleepydrive}@postgres:5432/${POSTGRES_DB:-sleepydrive}
+      MQTT_HOST: ${MQTT_HOST:-}
+      MQTT_PORT: ${MQTT_PORT:-}
+      MQTT_TOPICS: ${MQTT_TOPICS:-}
+      MQTT_QOS: ${MQTT_QOS:-}
+      MP_QTT_HOST: ${MP_QTT_HOST:-mosquitto}
+      MP_QTT_PORT: ${MP_QTT_PORT:-1883}
+      MP_QTT_TOPIC: ${MP_QTT_TOPIC:-sleepydrive/alerts/+}
+      MP_QTT_QOS: ${MP_QTT_QOS:-1}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MP_QTT_USERNAME: ${MP_QTT_USERNAME:-}
+      MP_QTT_PASSWORD: ${MP_QTT_PASSWORD:-}
+      MQTT_TLS: ${MQTT_TLS:-}
+      MQTT_TLS_INSECURE: ${MQTT_TLS_INSECURE:-}
+      MQTT_CA_CERT: ${MQTT_CA_CERT:-}
+      MQTT_CLIENT_CERT: ${MQTT_CLIENT_CERT:-}
+      MQTT_CLIENT_KEY: ${MQTT_CLIENT_KEY:-}
+      MP_QTT_TLS: ${MP_QTT_TLS:-}
+      MP_QTT_TLS_INSECURE: ${MP_QTT_TLS_INSECURE:-}
+      MP_QTT_CA_CERT: ${MP_QTT_CA_CERT:-}
+      MP_QTT_CLIENT_CERT: ${MP_QTT_CLIENT_CERT:-}
+      MP_QTT_CLIENT_KEY: ${MP_QTT_CLIENT_KEY:-}
+      WS_DEFAULT_REPLAY: ${WS_DEFAULT_REPLAY:-25}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:
+  mosquitto_data:
+  mosquitto_log:
