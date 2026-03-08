@@ -46,3 +46,5 @@ app.*.map.json
 
 # API keys and other codes
 lib/secrets.dart
+
+*.txt

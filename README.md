@@ -3,6 +3,7 @@
 This repo will compile all the work done for this class and then we'll split it up accordingly after to push to the legit github "https://github.com/PJ-004/CSE123A-Group7-Project.git". 
 
 # How to run:   
+<<<<<<< HEAD
 
 on one machine to run sever (not needed since hosted on domain):    
 cd backend\realtime   
@@ -31,6 +32,9 @@ python run_server.py
 
 or docker if youre weird:   
 docker compose up --build   
+=======
+ 
+>>>>>>> 70a2cee6f80eea2ef14cba99a4173b5d2aa10967
 
 any machine:    This is the command to run !!!          
 
