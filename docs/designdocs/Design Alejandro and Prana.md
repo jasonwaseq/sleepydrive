@@ -19,9 +19,9 @@ Table of Contents
 
 4.1. Personas
 
-4.1.1. Truck Driver Persona (Mike Dunford)
+4.1. Truck Driver Persona (Mike Dunford)
 
-4.1.2. Fleet Operator Persona (Sarah Porter)
+4.2. Fleet Operator Persona (Sarah Porter)
 
 5. Existing Designs & Products Research
 
