@@ -63,6 +63,9 @@ Prevent people from driving while drowsy.
 * **Custom PCB:** The "brain" of the device acts as the central computer.
 * **GPU:** The PCB is equipped with a powerful GPU capable of hosting and running our real-time AI model.
 
+**Block Diagram**
+![Block Diagram](Block-Diagram.png)
+
 **Software & Artificial Intelligence**
 * **AI Model:** Programmed using the **Python** programming language.
 * **Framework:** Utilizes **Mediapipe** for visual data processing and body language inferences.
@@ -71,3 +74,7 @@ Prevent people from driving while drowsy.
 * **User Interface:** Notifications are pushed to a frontend application that operates seamlessly across **Android**, **iOS**, and the **Web**.
 * **Development Framework:** The app is built using **Flutter**, which utilizes the **Dart** programming language.
 * **Dependencies:** Compiling the app requires the **Android SDK** (for Android devices) and **XCode** (for iOS devices).
+
+**State Machine**
+TODO: Improve this
+![State Machine](State-Machine.png)
