@@ -1,6 +1,7 @@
 <div align="center">
 
 Driver Drowsiness Detection
+
 Group 8
 
 Pranav Jha • Alejandro Melo-Elizalde • Jason Waseq Pravin Agrawal-Chung • Ricardo Diaz Fuentes • Soham Jain
@@ -8,13 +9,13 @@ Pranav Jha • Alejandro Melo-Elizalde • Jason Waseq Pravin Agrawal-Chung • 
 </div>
 
 Table of Contents
-Title Page
+1. Title Page
 
-Table of Contents
+2. Table of Contents
 
-Introduction
+3. Introduction
 
-Need & Goal Statements
+3.1 Need & Goal Statements
 
 4.1. Personas
 
@@ -22,11 +23,11 @@ Need & Goal Statements
 
 4.1.2. Fleet Operator Persona (Sarah Porter)
 
-Existing Designs & Products Research
+5. Existing Designs & Products Research
 
-Sustainability Statement
+6. Sustainability Statement
 
-Design Features
+7. Design Features
 
 7.1. Driver Monitoring Features
 
@@ -38,19 +39,19 @@ Design Features
 
 7.5. System Architecture
 
-Block Diagrams
+8. Block Diagrams
 
-State Transition Diagrams
+9. State Transition Diagrams
 
-Technology
+10. Technology
 
-Functional Prototype
+11. Functional Prototype
 
-Testing
+12. Testing
 
 12.1. Testing Scenarios
 
-3. Introduction
+Introduction
 Driver drowsiness is a safety-critical problem, as it causes unsafe driving conditions by lowering reaction times, reducing attention, and impairing decision-making.
 
 The Impact: An estimated 17.6% of fatal crashes in the United States from 2017 to 2021 involved a drowsy or tired driver, resulting in approximately 30,000 deaths during that period.
@@ -61,14 +62,14 @@ How it Works: The system captures visual data of the driver and makes real-time 
 
 Safety Precaution: Fleet operators are integrated into the system as an extra layer of precaution. If a driver is drowsy and fails to stop and rest, the fleet operator will intervene and remind the driver to pull over, preventing accidents and keeping the roads safe.
 
-4. Need & Goal Statements
+Need & Goal Statements
 Need Statement
 Vehicular accidents are caused by people feeling too drowsy/tired.
 
 Goal Statement
 Prevent people from driving while drowsy.
 
-10. Technology
+Technology
 (Note: Content formatted into categories for easier reading)
 
 Hardware & Processing
