@@ -1,1 +1,8 @@
 serverinstructions.txt
+__pycache__/
+*.py[cod]
+*.pyc
+.venv/
+venv/
+.env
+.env.*
