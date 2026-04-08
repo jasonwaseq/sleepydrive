@@ -1,6 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'screens/live_monitor_screen.dart';
-import 'screens/drowsiness_detected_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/osm_map_screen.dart';
 
@@ -15,13 +15,12 @@ class DriverSafetyApp extends StatefulWidget {
 }
 
 class _DriverSafetyAppState extends State<DriverSafetyApp> {
-  ThemeMode _themeMode = ThemeMode.dark; // starts dark
+  ThemeMode _themeMode = ThemeMode.dark;
 
   void toggleTheme() {
     setState(() {
-      _themeMode = _themeMode == ThemeMode.dark
-          ? ThemeMode.light
-          : ThemeMode.dark;
+      _themeMode =
+          _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
     });
   }
 
@@ -34,7 +33,6 @@ class _DriverSafetyAppState extends State<DriverSafetyApp> {
       title: 'Drowsiness Guide',
       themeMode: _themeMode,
 
-      // ── Dark theme (your existing theme, unchanged) ──────────────────
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -58,7 +56,6 @@ class _DriverSafetyAppState extends State<DriverSafetyApp> {
         ),
       ),
 
-      // ── Light theme ──────────────────────────────────────────────────
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
@@ -83,12 +80,26 @@ class _DriverSafetyAppState extends State<DriverSafetyApp> {
       ),
 
       routes: {
-        '/': (context) => const LoginScreen(),
         '/dashboard': (context) => const LiveMonitorScreen(),
-        '/drowsiness-detected': (context) => const DrowsinessDetectedScreen(),
         '/map': (context) => const OSMMapScreen(),
       },
-      initialRoute: '/',
+
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          if (snapshot.hasData) {
+            return const LiveMonitorScreen();
+          }
+
+          return const LoginScreen();
+        },
+      ),
     );
   }
 }

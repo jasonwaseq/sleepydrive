@@ -449,7 +449,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () =>
-                    Navigator.pushNamed(context, '/drowsiness-detected'),
+                    Navigator.pushNamed(context, '/map'),
                 child: const Center(
                   child: Text(
                     'DROWSINESS DETECTED',
