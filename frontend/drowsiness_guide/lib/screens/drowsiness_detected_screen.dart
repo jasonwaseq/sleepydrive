@@ -17,14 +17,15 @@ const _border = Color(0x1A000000);
 
 // -----------------------------------------------------
 
-class LiveMonitorScreen extends StatefulWidget {
-  const LiveMonitorScreen({super.key});
+class DrowsinessDetectedScreen extends StatefulWidget {
+  const DrowsinessDetectedScreen({super.key});
 
   @override
-  State<LiveMonitorScreen> createState() => _LiveMonitorScreenState();
+  State<DrowsinessDetectedScreen> createState() =>
+      _DrowsinessDetectedScreenState();
 }
 
-class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
+class _DrowsinessDetectedScreenState extends State<DrowsinessDetectedScreen> {
   String? _latText;
   String? _lonText;
   String? _locErr;
@@ -283,10 +284,10 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
               ),
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: () => Navigator.pushNamed(context, '/drowsiness-detected'),
+                onTap: () => Navigator.pushNamed(context, '/map'),
                 child: const Center(
                   child: Text(
-                    'DROWSINESS DETECTED',
+                    'OPEN MAP',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w800,

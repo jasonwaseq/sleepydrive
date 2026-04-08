@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'screens/live_monitor_screen.dart';
 import 'screens/drowsiness_detected_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/osm_map_screen.dart';
 
 class DriverSafetyApp extends StatefulWidget {
   const DriverSafetyApp({super.key});
@@ -85,6 +86,7 @@ class _DriverSafetyAppState extends State<DriverSafetyApp> {
         '/': (context) => const LoginScreen(),
         '/dashboard': (context) => const LiveMonitorScreen(),
         '/drowsiness-detected': (context) => const DrowsinessDetectedScreen(),
+        '/map': (context) => const OSMMapScreen(),
       },
       initialRoute: '/',
     );
