@@ -31,8 +31,9 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
   Position? _pos;
   LatLng? _dest;
   List<LatLng> _route = [];
-  List<osm.PlaceSummary> _stops = [];
+  List<_StopWithRoute> _stopsWithRoutes = [];
   bool _loadingStops = false;
+  bool _showOtherStops = false;
   String? _stopsError;
   final osm.OSMPlacesService _places = osm.OSMPlacesService();
   final gplaces.PlacesService _googlePlaces =
@@ -145,11 +146,22 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
           )
           .toList();
 
+      final selectedStop = _stopsWithRoutes.isEmpty
+          ? null
+          : _stopsWithRoutes.firstWhere(
+              (s) =>
+                  (s.place.lat - to.latitude).abs() < 0.0001 &&
+                  (s.place.lon - to.longitude).abs() < 0.0001,
+              orElse: () => _stopsWithRoutes.first,
+            );
+      final stopName = selectedStop?.place.name ?? 'Destination';
+      final miles = distanceM / 1609.344;
+      final etaMin = (durationS / 60).round();
+
       setState(() {
         _route = pts;
         _status = 'Ready';
-        _routeInfo =
-            'Distance: ${(distanceM / 1000).toStringAsFixed(2)} km • ETA: ${(durationS / 60).toStringAsFixed(0)} min';
+        _routeInfo = '$stopName • ${miles.toStringAsFixed(1)} mi • $etaMin min';
       });
 
       _fitToPoints([from, to, ...pts]);
@@ -168,27 +180,83 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
 
     try {
       final stops = await _fetchStopsWithFallback();
-
       if (!mounted) return;
+
+      final enriched = await _fetchDrivingDistances(stops);
+      if (!mounted) return;
+
+      enriched.sort((a, b) => a.etaMinutes.compareTo(b.etaMinutes));
+
       setState(() {
-        _stops = stops;
+        _stopsWithRoutes = enriched;
         _loadingStops = false;
       });
 
-      // If no explicit destination was provided, route to the nearest stop.
-      if (_dest == null && stops.isNotEmpty) {
-        _dest = LatLng(stops.first.lat, stops.first.lon);
+      if (_dest == null && enriched.isNotEmpty) {
+        final closest = enriched.first;
+        _dest = LatLng(closest.place.lat, closest.place.lon);
         await _buildRoute();
       }
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loadingStops = false;
-        _stopsError = _stops.isNotEmpty
+        _stopsError = _stopsWithRoutes.isNotEmpty
             ? '$e (showing previous stops)'
             : e.toString();
       });
     }
+  }
+
+  Future<List<_StopWithRoute>> _fetchDrivingDistances(
+    List<osm.PlaceSummary> stops,
+  ) async {
+    if (stops.isEmpty || _pos == null) return [];
+
+    final userLon = _pos!.longitude;
+    final userLat = _pos!.latitude;
+
+    final coords = StringBuffer('$userLon,$userLat');
+    for (final s in stops) {
+      coords.write(';${s.lon},${s.lat}');
+    }
+
+    final url = Uri.parse(
+      'https://router.project-osrm.org/table/v1/driving/$coords'
+      '?sources=0&annotations=distance,duration',
+    );
+
+    try {
+      final res = await http.get(url).timeout(const Duration(seconds: 12));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        if (data['code'] == 'Ok') {
+          final distances =
+              (data['distances'] as List).first as List<dynamic>;
+          final durations =
+              (data['durations'] as List).first as List<dynamic>;
+
+          return List.generate(stops.length, (i) {
+            final distMeters = (distances[i + 1] as num?)?.toDouble() ?? 0;
+            final durSeconds = (durations[i + 1] as num?)?.toDouble() ?? 0;
+            return _StopWithRoute(
+              place: stops[i],
+              distanceMiles: distMeters / 1609.344,
+              etaMinutes: durSeconds / 60,
+            );
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('OSRM table API failed: $e');
+    }
+
+    return stops
+        .map(
+          (s) => _StopWithRoute(place: s, distanceMiles: 0, etaMinutes: 0),
+        )
+        .toList();
   }
 
   Future<List<osm.PlaceSummary>> _fetchStopsWithFallback() async {
@@ -247,13 +315,14 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
     );
   }
 
-  Future<void> _openGoogleNav() async {
-    if (_pos == null || _dest == null) return;
+  Future<void> _openGoogleNav({LatLng? destination}) async {
+    final target = destination ?? _dest;
+    if (_pos == null || target == null) return;
 
     final uri = Uri.parse(
       'https://www.google.com/maps/dir/?api=1'
       '&origin=${_pos!.latitude},${_pos!.longitude}'
-      '&destination=${_dest!.latitude},${_dest!.longitude}'
+      '&destination=${target.latitude},${target.longitude}'
       '&travelmode=driving',
     );
 
@@ -263,6 +332,72 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
         const SnackBar(content: Text('Could not open Google Maps.')),
       );
     }
+  }
+
+  Widget _buildStopRow(_StopWithRoute stop) {
+    final isSelected = _dest != null &&
+        (stop.place.lat - _dest!.latitude).abs() < 0.0001 &&
+        (stop.place.lon - _dest!.longitude).abs() < 0.0001;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  stop.place.name,
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  stop.etaMinutes > 0
+                      ? '${stop.distanceMiles.toStringAsFixed(1)} mi • ${stop.etaMinutes.round()} min'
+                      : 'Distance unavailable',
+                  style: TextStyle(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: IconButton(
+              style: IconButton.styleFrom(
+                backgroundColor: _brandBlue,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+              onPressed: () => _openGoogleNav(
+                destination: LatLng(stop.place.lat, stop.place.lon),
+              ),
+              icon: const Icon(Icons.near_me, size: 16),
+              tooltip: 'Navigate',
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -386,9 +521,9 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                                 ),
                               ),
                             ),
-                          for (final stop in _stops)
+                          for (final sw in _stopsWithRoutes)
                             Marker(
-                              point: LatLng(stop.lat, stop.lon),
+                              point: LatLng(sw.place.lat, sw.place.lon),
                               width: 20,
                               height: 20,
                               child: Container(
@@ -417,56 +552,104 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                     top: 12,
                     left: 12,
                     right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.95),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: Colors.black.withValues(alpha: 0.12),
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                      alignment: Alignment.topCenter,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
                         ),
-                        boxShadow: const [
-                          BoxShadow(blurRadius: 12, color: Colors.black12),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _routeInfo.isNotEmpty
-                                  ? _routeInfo
-                                  : _stopsError != null
-                                  ? _stopsError!
-                                  : _status,
-                              style: const TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Colors.black.withValues(alpha: 0.12),
                           ),
-                          const SizedBox(width: 10),
-                          if (_dest != null)
-                            FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _brandBlue,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
+                          boxShadow: const [
+                            BoxShadow(blurRadius: 12, color: Colors.black12),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _routeInfo.isNotEmpty
+                                        ? _routeInfo
+                                        : _stopsError != null
+                                        ? _stopsError!
+                                        : _status,
+                                    style: const TextStyle(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                const SizedBox(width: 8),
+                                if (_dest != null)
+                                  SizedBox(
+                                    height: 48,
+                                    width: 48,
+                                    child: IconButton(
+                                      style: IconButton.styleFrom(
+                                        backgroundColor: _brandBlue,
+                                        foregroundColor: Colors.white,
+                                        padding: EdgeInsets.zero,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                      onPressed: _openGoogleNav,
+                                      icon: const Icon(Icons.near_me, size: 20),
+                                      tooltip: 'Navigate',
+                                    ),
+                                  ),
+                                if (_stopsWithRoutes.length > 1) ...[
+                                  const SizedBox(width: 6),
+                                  SizedBox(
+                                    height: 48,
+                                    child: FilledButton(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: _showOtherStops
+                                            ? Colors.grey.shade600
+                                            : Colors.grey.shade400,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                      onPressed: () => setState(
+                                        () => _showOtherStops = !_showOtherStops,
+                                      ),
+                                      child: Text(
+                                        _showOtherStops ? 'Close' : 'More',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            if (_showOtherStops && _stopsWithRoutes.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Column(
+                                  children: [
+                                    for (final stop in _stopsWithRoutes)
+                                      _buildStopRow(stop),
+                                  ],
                                 ),
                               ),
-                              onPressed: _openGoogleNav,
-                              child: const Text('Navigate'),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -489,7 +672,7 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                       child: Text(
                         _loadingStops
                             ? 'Loading stops…'
-                            : 'Stops: ${_stops.length}',
+                            : 'Stops: ${_stopsWithRoutes.length}',
                         style: const TextStyle(fontSize: 11, color: Colors.black87),
                       ),
                     ),
@@ -524,4 +707,16 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
       ),
     );
   }
+}
+
+class _StopWithRoute {
+  final osm.PlaceSummary place;
+  final double distanceMiles;
+  final double etaMinutes;
+
+  const _StopWithRoute({
+    required this.place,
+    required this.distanceMiles,
+    required this.etaMinutes,
+  });
 }
