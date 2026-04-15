@@ -11,7 +11,7 @@ any machine:    This is the command to run !!!
 
 `python3 -m uvicorn app:app --reload`
 
-** double check that backend is up and running by searching this on your web browser: `http://localhost:8000/healthz`
+- double check that backend is up and running by searching this on your web browser: `http://localhost:8000/healthz`
 
 2) Terminal 2:
 
