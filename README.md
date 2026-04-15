@@ -5,13 +5,15 @@ This repo will compile all the work done for this class and then we'll split it 
 # How to run:
 any machine:    This is the command to run !!!
 
-Terminal 1:
+1) Terminal 1:
 
 `cd backend/`
 
 `python3 -m uvicorn app:app --reload`
 
-Terminal 2:
+** double check that backend is up and running by searching this on your web browser: `http://localhost:8000/healthz`
+
+2) Terminal 2:
 
 `cd frontend\drowsiness_guide`   
 
