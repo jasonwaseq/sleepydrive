@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:drowsiness_guide/app.dart';
 import 'package:drowsiness_guide/services/auth_service.dart';
+import 'package:drowsiness_guide/services/user_role_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,11 +14,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final AuthService _authService = AuthService();
-
-  static const String _backendBaseUrl = String.fromEnvironment(
-    'BACKEND_BASE_URL',
-    defaultValue: 'http://localhost:8000',
-  );
+  final UserRoleService _userRoleService = UserRoleService();
 
   final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _passCtrl = TextEditingController();
@@ -36,28 +30,24 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<String> _fetchUserRole(String uid) async {
-    final response = await http.get(
-      Uri.parse('$_backendBaseUrl/users/$uid'),
-    );
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Failed to fetch user role');
-    }
-
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-    return decoded['role'] as String;
-  }
-
   Future<void> _routeSignedInUser() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw Exception('No authenticated user found');
     }
 
-    final role = await _fetchUserRole(user.uid);
+    final role = await _userRoleService.fetchRole(user.uid);
 
     if (!mounted) return;
+
+    if (role == null) {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/select-role',
+        (route) => false,
+      );
+      return;
+    }
 
     if (role == 'operator') {
       Navigator.pushNamedAndRemoveUntil(
@@ -85,7 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (password.length < 6) {
+    if (_isCreateMode && password.length < 6) {
       setState(() {
         _errorText = 'Password must be at least 6 characters';
       });
@@ -150,7 +140,7 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrintStack(stackTrace: st);
 
       setState(() {
-        _errorText = 'Google sign-in failed: $e';
+        _errorText = _friendlyAuthError(e);
       });
     } finally {
       if (mounted) {
@@ -162,6 +152,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   String _friendlyAuthError(Object error) {
+    if (error is UserRoleServiceException) {
+      if (error.isNotFound) {
+        return 'Account created, but your role is missing. Please choose a role to continue.';
+      }
+      return 'Authenticated, but the profile service could not be reached.';
+    }
+
     final text = error.toString();
 
     if (text.contains('invalid-credential')) {
@@ -182,11 +179,26 @@ class _LoginScreenState extends State<LoginScreen> {
     if (text.contains('wrong-password')) {
       return 'Invalid email or password';
     }
+    if (text.contains('network-request-failed')) {
+      return 'Network error. Check your connection and try again.';
+    }
+    if (text.contains('too-many-requests')) {
+      return 'Too many attempts. Please wait a moment and try again.';
+    }
+    if (text.contains('user-disabled')) {
+      return 'This account has been disabled.';
+    }
+    if (text.contains('operation-not-allowed')) {
+      return 'Email/password sign-in is not enabled in Firebase.';
+    }
+    if (text.contains('No authenticated user found')) {
+      return 'Authentication succeeded, but no user session was available.';
+    }
     if (text.contains('Failed to fetch user role')) {
       return 'Signed in, but could not load account role';
     }
 
-    return 'Authentication failed';
+    return 'Authentication failed: ${text.replaceFirst('Exception: ', '')}';
   }
 
   @override
@@ -198,24 +210,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final textColor = isDark ? Colors.white : Colors.black;
     final subTextColor = isDark
-        ? Colors.white.withOpacity(0.7)
-        : Colors.black.withOpacity(0.7);
+        ? Colors.white.withValues(alpha: 0.7)
+        : Colors.black.withValues(alpha: 0.7);
 
     final fieldFill = isDark
         ? const Color(0xFF1E2D40)
-        : Colors.white.withOpacity(0.96);
+        : Colors.white.withValues(alpha: 0.96);
 
     final hintColor = isDark
-        ? Colors.white.withOpacity(0.42)
-        : Colors.black.withOpacity(0.55);
+        ? Colors.white.withValues(alpha: 0.42)
+        : Colors.black.withValues(alpha: 0.55);
 
     final borderColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.10);
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.10);
 
     final focusBorder = isDark
-        ? Colors.white.withOpacity(0.28)
-        : Colors.black.withOpacity(0.22);
+        ? Colors.white.withValues(alpha: 0.28)
+        : Colors.black.withValues(alpha: 0.22);
 
     final primaryButtonColor =
         isDark ? const Color(0xFF6E95DC) : const Color(0xFF5E8AD6);
@@ -288,9 +300,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(
-                                  isDark ? 0.28 : 0.12,
-                                ),
+                                color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.12),
                                 blurRadius: 18,
                                 offset: const Offset(0, 8),
                               ),
@@ -356,9 +366,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(
-                                  isDark ? 0.28 : 0.12,
-                                ),
+                                color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.12),
                                 blurRadius: 18,
                                 offset: const Offset(0, 8),
                               ),

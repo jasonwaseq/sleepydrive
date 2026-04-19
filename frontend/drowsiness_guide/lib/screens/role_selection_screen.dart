@@ -1,15 +1,13 @@
-import 'dart:convert';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:drowsiness_guide/app.dart';
 import 'package:drowsiness_guide/services/auth_service.dart';
+import 'package:drowsiness_guide/services/user_role_service.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
-  final String email;
-  final String password;
+  final String? email;
+  final String? password;
 
   const RoleSelectionScreen({
     super.key,
@@ -23,46 +21,72 @@ class RoleSelectionScreen extends StatefulWidget {
 
 class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   final AuthService _authService = AuthService();
-
-  static const String _backendBaseUrl = String.fromEnvironment(
-    'BACKEND_BASE_URL',
-    defaultValue: 'http://localhost:8000',
-  );
+  final UserRoleService _userRoleService = UserRoleService();
 
   bool _isLoading = false;
   String? _errorText;
 
-  Future<void> _saveUserRole({
-    required String uid,
-    required String role,
-  }) async {
-    final url = Uri.parse('$_backendBaseUrl/users');
+  Future<User> _ensureAuthenticatedUser() async {
+    final existingUser = FirebaseAuth.instance.currentUser;
+    if (existingUser != null) {
+      return existingUser;
+    }
 
-    debugPrint('ROLE SAVE URL: $url');
-    debugPrint('ROLE SAVE BODY: {"uid":"$uid","role":"$role"}');
+    final email = widget.email?.trim() ?? '';
+    final password = widget.password?.trim() ?? '';
+    if (email.isEmpty || password.isEmpty) {
+      throw Exception('Missing account credentials');
+    }
 
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'uid': uid,
-        'role': role,
-      }),
-    );
-
-    debugPrint('ROLE SAVE STATUS: ${response.statusCode}');
-    debugPrint('ROLE SAVE RESPONSE: ${response.body}');
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(
-        'Failed to save user role (status ${response.statusCode}): ${response.body}',
+    try {
+      final credential = await _authService.createUserWithEmailPassword(
+        email: email,
+        password: password,
       );
+      return credential.user!;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'email-already-in-use') {
+        final credential = await _authService.signInWithEmailPassword(
+          email: email,
+          password: password,
+        );
+        return credential.user!;
+      }
+      rethrow;
     }
   }
 
-  Future<void> _createAccountAndRoute({
+  String _routeForRole(String role) {
+    return role == 'operator' ? '/fleet-dashboard' : '/dashboard';
+  }
+
+  String _friendlyError(Object error) {
+    if (error is UserRoleServiceException) {
+      return 'Your account was created, but the app could not save your role. Please try again.';
+    }
+    if (error is FirebaseAuthException) {
+      switch (error.code) {
+        case 'email-already-in-use':
+          return 'An account already exists with this email.';
+        case 'invalid-email':
+          return 'Please enter a valid email address.';
+        case 'weak-password':
+          return 'Password is too weak.';
+        case 'network-request-failed':
+          return 'Network error. Check your connection and try again.';
+        case 'operation-not-allowed':
+          return 'Email/password sign-up is not enabled in Firebase.';
+        case 'invalid-credential':
+        case 'wrong-password':
+        case 'user-not-found':
+          return 'The saved account credentials are no longer valid. Please go back and try again.';
+      }
+    }
+    return 'Could not create account: ${error.toString().replaceFirst('Exception: ', '')}';
+  }
+
+  Future<void> _saveRoleAndRoute({
     required String role,
-    required String routeName,
   }) async {
     setState(() {
       _isLoading = true;
@@ -70,44 +94,19 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     });
 
     try {
-      debugPrint('START SIGNUP');
-      debugPrint('EMAIL: ${widget.email}');
-      debugPrint('ROLE: $role');
-      debugPrint('BACKEND BASE URL: $_backendBaseUrl');
-
-      await _authService.createUserWithEmailPassword(
-        email: widget.email,
-        password: widget.password,
-      );
-
-      debugPrint('FIREBASE ACCOUNT CREATED');
-
-      final user = FirebaseAuth.instance.currentUser;
-      debugPrint('CURRENT USER UID: ${user?.uid}');
-      debugPrint('CURRENT USER EMAIL: ${user?.email}');
-
-      if (user == null) {
-        throw Exception('No authenticated user found after signup');
-      }
-
-      await _saveUserRole(uid: user.uid, role: role);
-
-      debugPrint('ROLE SAVED TO BACKEND');
-      debugPrint('ROUTING TO: $routeName');
+      final user = await _ensureAuthenticatedUser();
+      await _userRoleService.saveRole(uid: user.uid, role: role);
 
       if (!mounted) return;
 
       Navigator.pushNamedAndRemoveUntil(
         context,
-        routeName,
+        _routeForRole(role),
         (route) => false,
       );
-    } catch (e, st) {
-      debugPrint('ROLE SIGNUP ERROR: $e');
-      debugPrintStack(stackTrace: st);
-
+    } catch (e) {
       setState(() {
-        _errorText = 'Could not create account: $e';
+        _errorText = _friendlyError(e);
       });
     } finally {
       if (mounted) {
@@ -118,17 +117,23 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     }
   }
 
+  Future<void> _handleBack() async {
+    if (FirebaseAuth.instance.currentUser != null) {
+      await _authService.signOut();
+    }
+    if (!mounted) return;
+    Navigator.pop(context);
+  }
+
   Future<void> _handleDriverSelection() async {
-    await _createAccountAndRoute(
+    await _saveRoleAndRoute(
       role: 'driver',
-      routeName: '/dashboard',
     );
   }
 
   Future<void> _handleOperatorSelection() async {
-    await _createAccountAndRoute(
+    await _saveRoleAndRoute(
       role: 'operator',
-      routeName: '/fleet-dashboard',
     );
   }
 
@@ -187,7 +192,9 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     ),
                     const SizedBox(height: 18),
                     Text(
-                      "Select how you'll use the platform",
+                      FirebaseAuth.instance.currentUser == null
+                          ? "Select how you'll use the platform"
+                          : "Finish setting up your account",
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: subTextColor,
@@ -235,7 +242,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     ],
                     const SizedBox(height: 24),
                     TextButton(
-                      onPressed: _isLoading ? null : () => Navigator.pop(context),
+                      onPressed: _isLoading ? null : _handleBack,
                       child: Text(
                         'Back',
                         style: TextStyle(

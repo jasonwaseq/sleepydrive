@@ -23,6 +23,13 @@ def _ssl_context_for_dsn(dsn: str) -> ssl.SSLContext | None:
     return None
 
 
+USERS_SQL = """
+CREATE TABLE IF NOT EXISTS users (
+    uid TEXT PRIMARY KEY,
+    role TEXT NOT NULL CHECK (role IN ('driver', 'operator'))
+);
+"""
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS alert_events (
     id BIGSERIAL PRIMARY KEY,
@@ -81,6 +88,7 @@ class Database:
     async def init_schema(self) -> None:
         async with self.pool.acquire() as conn:
             await conn.execute(SCHEMA_SQL)
+            await conn.execute(USERS_SQL)
 
     async def ping(self) -> None:
         async with self.pool.acquire() as conn:

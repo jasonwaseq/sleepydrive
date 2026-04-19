@@ -164,6 +164,43 @@ def create_app() -> FastAPI:
         events = await repo.recent(limit=limit, device_id=device_id)
         return {"count": len(events), "items": [event.as_dict() for event in events]}
 
+    @app.post("/users")
+    async def create_user(data: dict) -> dict[str, str]:
+        uid = data.get("uid")
+        role = data.get("role")
+
+        if not uid or not role:
+            raise HTTPException(status_code=400, detail="Missing uid or role")
+
+        if role not in {"driver", "operator"}:
+            raise HTTPException(status_code=400, detail="Invalid role")
+
+        async with db.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO users (uid, role)
+                VALUES ($1, $2)
+                ON CONFLICT (uid) DO UPDATE SET role = EXCLUDED.role
+                """,
+                uid,
+                role,
+            )
+
+        return {"status": "ok"}
+
+    @app.get("/users/{uid}")
+    async def get_user(uid: str) -> dict[str, str]:
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT uid, role FROM users WHERE uid = $1",
+                uid,
+            )
+
+        if row is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return {"uid": row["uid"], "role": row["role"]}
+
     @app.websocket("/ws/alerts")
     async def ws_alerts(
         websocket: WebSocket,

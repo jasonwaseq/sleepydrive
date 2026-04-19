@@ -1,0 +1,4 @@
+[submodule "jetson_code"]
+	path = jetson_code
+	url = https://github.com/jasonwaseq/Jetson-Orin-Nano-MediaPipe-Driver-Monitoring-System.git
+	branch = master
