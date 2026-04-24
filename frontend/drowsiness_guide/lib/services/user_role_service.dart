@@ -207,6 +207,37 @@ class UserRoleService {
     return fallback;
   }
 
+  Future<UserProfile?> fetchProfile(String uid) async {
+    final http.Response response;
+    try {
+      response = await http
+          .get(
+            Uri.parse('$backendBaseUrl/users/$uid'),
+            headers: await _headers(),
+          )
+          .timeout(_timeout);
+    } on UserRoleServiceException {
+      rethrow;
+    } on Exception {
+      throw const UserRoleServiceException(
+        'Could not reach the profile server. Check your connection.',
+      );
+    }
+
+    if (response.statusCode == 404) {
+      return null;
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw UserRoleServiceException(
+        _errorDetail(response, 'Failed to fetch user profile'),
+        statusCode: response.statusCode,
+      );
+    }
+
+    return UserProfile.fromJson(_decodeObject(response));
+  }
+
   Future<String?> fetchRole(String uid) async {
     final http.Response response;
     try {
@@ -354,5 +385,30 @@ class UserRoleService {
         .whereType<Map>()
         .map((raw) => FleetAlert.fromJson(Map<String, dynamic>.from(raw)))
         .toList();
+  }
+
+  Future<void> removeDriver(String driverUid) async {
+    final http.Response response;
+    try {
+      response = await http
+          .delete(
+            Uri.parse('$backendBaseUrl/fleet/drivers/$driverUid'),
+            headers: await _headers(),
+          )
+          .timeout(_timeout);
+    } on UserRoleServiceException {
+      rethrow;
+    } on Exception {
+      throw const UserRoleServiceException(
+        'Could not reach the fleet server. Check your connection.',
+      );
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw UserRoleServiceException(
+        _errorDetail(response, 'Failed to remove driver'),
+        statusCode: response.statusCode,
+      );
+    }
   }
 }

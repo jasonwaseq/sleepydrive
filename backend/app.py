@@ -570,6 +570,29 @@ def create_app() -> FastAPI:
             )
         return {"items": _alert_history_response(rows)}
 
+    @app.delete("/fleet/drivers/{driver_uid}")
+    async def remove_fleet_driver(
+        driver_uid: str,
+        authorization: str | None = Header(None),
+    ) -> dict[str, str]:
+        user = _auth_user(authorization)
+        operator = await _require_operator_profile(user)
+
+        async with db.pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE users
+                SET fleet_id = NULL, updated_at = NOW()
+                WHERE uid = $1 AND fleet_id = $2 AND role = 'driver'
+                """,
+                driver_uid,
+                operator["fleet_id"],
+            )
+        if result == "UPDATE 0":
+            raise HTTPException(status_code=404, detail="Driver not found in your fleet")
+
+        return {"status": "removed"}
+
     @app.get("/fleet/drivers/{driver_uid}/alerts")
     async def fleet_driver_alerts(
         driver_uid: str,

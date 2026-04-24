@@ -219,6 +219,46 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
     );
   }
 
+  Future<void> _removeDriver(_DriverData driver) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove driver?'),
+        content: Text(
+          '${driver.displayName} will be removed from your fleet. '
+          'They can rejoin with an invite code.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _userRoleService.removeDriver(driver.uid);
+      if (!mounted) return;
+      setState(() => _driversByUid.remove(driver.uid));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${driver.displayName} removed from fleet')),
+      );
+    } on UserRoleServiceException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = DriverSafetyApp.of(context).isDark;
@@ -292,6 +332,8 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
                                       rank: i + 1,
                                       onViewAlerts: () =>
                                           _showDriverAlerts(sortedDrivers[i]),
+                                      onRemove: () =>
+                                          _removeDriver(sortedDrivers[i]),
                                     ),
                                   );
                                 },
@@ -498,11 +540,13 @@ class _DriverCard extends StatelessWidget {
   final _DriverData driver;
   final int rank;
   final VoidCallback onViewAlerts;
+  final VoidCallback onRemove;
 
   const _DriverCard({
     required this.driver,
     required this.rank,
     required this.onViewAlerts,
+    required this.onRemove,
   });
 
   String _formatTime(DateTime? time) {
@@ -610,6 +654,11 @@ class _DriverCard extends StatelessWidget {
               tooltip: 'View alerts',
               onPressed: onViewAlerts,
               icon: const Icon(Icons.history_rounded),
+            ),
+            IconButton(
+              tooltip: 'Remove from fleet',
+              onPressed: onRemove,
+              icon: const Icon(Icons.person_remove_rounded, color: Color(0xFFEF4444)),
             ),
           ],
         ),

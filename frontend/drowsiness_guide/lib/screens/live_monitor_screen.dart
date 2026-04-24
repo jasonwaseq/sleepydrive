@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/weather_service.dart';
 import '../services/ble_service.dart';
 import '../services/jetson_websocket_service.dart';
+import '../services/user_role_service.dart';
 import '../secrets.dart';
 import '../app.dart';
 import '../services/auth_service.dart';
@@ -33,6 +35,8 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
   );
   static const int _fatigueRiskResetValue = 100;
   static const int _fatigueRiskStep = 10;
+
+  String? _fleetName;
 
   String? _cityText;
   String? _locErr;
@@ -82,6 +86,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadLocationOnce();
+    _loadProfile();
 
     // Listen for BLE connection state changes
     _bleStateSub = _ble.connectionState.listen((state) {
@@ -287,6 +292,46 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     }
   }
 
+  Future<void> _loadProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      final profile = await UserRoleService().fetchProfile(user.uid);
+      if (!mounted) return;
+      setState(() => _fleetName = profile?.fleetName);
+    } catch (_) {}
+  }
+
+  Future<void> _showJoinFleetDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _JoinFleetDialog(
+        onJoin: (code) async {
+          final user = FirebaseAuth.instance.currentUser;
+          if (user == null) return;
+          await UserRoleService().saveRole(
+            uid: user.uid,
+            role: 'driver',
+            fleetInviteCode: code,
+          );
+        },
+        onSuccess: () {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Fleet joined successfully')),
+          );
+          _loadProfile();
+        },
+        onError: (message) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _backToLogin() async {
     await AuthService().signOut();
 
@@ -387,6 +432,11 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
             ),
           ),
           IconButton(
+            onPressed: _showJoinFleetDialog,
+            tooltip: 'Join a fleet',
+            icon: Icon(Icons.group_add, color: iconColor),
+          ),
+          IconButton(
             onPressed: _loadLocationOnce,
             icon: Icon(Icons.my_location, color: iconColor),
           ),
@@ -409,7 +459,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
           padding: const EdgeInsets.all(16),
           child: ListView(
             children: [
-              _HeaderCard(driverId: driverId, vehicle: vehicle),
+              _HeaderCard(driverId: driverId, vehicle: vehicle, fleetName: _fleetName),
               const SizedBox(height: 12),
               _RiskCard(value: _fatigueRisk, label: _fatigueRiskStatus),
               const SizedBox(height: 12),
@@ -501,8 +551,9 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
 class _HeaderCard extends StatelessWidget {
   final String driverId;
   final String vehicle;
+  final String? fleetName;
 
-  const _HeaderCard({required this.driverId, required this.vehicle});
+  const _HeaderCard({required this.driverId, required this.vehicle, this.fleetName});
 
   @override
   Widget build(BuildContext context) {
@@ -542,6 +593,19 @@ class _HeaderCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(vehicle, style: TextStyle(color: _black(0.6))),
+                  if (fleetName != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.local_shipping_rounded, size: 13, color: _black(0.45)),
+                        const SizedBox(width: 4),
+                        Text(
+                          fleetName!,
+                          style: TextStyle(color: _black(0.55), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -831,6 +895,99 @@ class _AlertsCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _JoinFleetDialog extends StatefulWidget {
+  final Future<void> Function(String code) onJoin;
+  final VoidCallback onSuccess;
+  final void Function(String message) onError;
+
+  const _JoinFleetDialog({
+    required this.onJoin,
+    required this.onSuccess,
+    required this.onError,
+  });
+
+  @override
+  State<_JoinFleetDialog> createState() => _JoinFleetDialogState();
+}
+
+class _JoinFleetDialogState extends State<_JoinFleetDialog> {
+  final _ctrl = TextEditingController();
+  String? _error;
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final code = _ctrl.text.trim();
+    if (code.isEmpty) {
+      setState(() => _error = 'Enter an invite code');
+      return;
+    }
+    setState(() {
+      _error = null;
+      _loading = true;
+    });
+    try {
+      await widget.onJoin(code);
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onSuccess();
+    } on UserRoleServiceException catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onError(e.message);
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onError('Could not join fleet. Try again.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Join a Fleet'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Enter the invite code from your fleet operator.'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ctrl,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              hintText: 'Invite code',
+              errorText: _error,
+              border: const OutlineInputBorder(),
+            ),
+            onSubmitted: (_) => _loading ? null : _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _loading ? null : _submit,
+          child: _loading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Join'),
+        ),
+      ],
     );
   }
 }

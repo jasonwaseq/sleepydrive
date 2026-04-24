@@ -17,7 +17,8 @@ class AuthService {
 
   Future<UserCredential?> signInWithGoogle() async {
     if (kIsWeb) {
-      final googleProvider = GoogleAuthProvider();
+      final googleProvider = GoogleAuthProvider()
+        ..setCustomParameters({'prompt': 'select_account'});
       return await _auth.signInWithPopup(googleProvider);
     }
 

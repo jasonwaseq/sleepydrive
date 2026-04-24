@@ -19,20 +19,14 @@ any machine:    This is the command to run !!!
 
 `cd backend/`
 
-`python3 -m uvicorn app:app --reload`
+`DATABASE_URL=postgresql://sleepydrive:sleepydrive@localhost:5432/sleepydrive python3 run_server.py`
 
-- double check that backend is up and running by searching this on your web browser: `http://localhost:8000/healthz`
-
-2) Terminal 2:
+1) Terminal 2:
 
 `cd frontend\drowsiness_guide`   
 
-`flutter run --dart-define=JETSON_WS_URL=wss://sleepydrive.onrender.com/ws/alerts?replay=0`
+`flutter run -d chrome --dart-define=BACKEND_BASE_URL=http://localhost:8080`
 
-or 
-
-Web w/o running Jetson:
-`flutter un -d chrome`
 
 ## How to run the emulator
 The emulator isn't finished yet but
