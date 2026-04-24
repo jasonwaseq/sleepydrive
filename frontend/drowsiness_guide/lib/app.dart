@@ -1,11 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'screens/fleet_operator_dashboard.dart';
 import 'screens/live_monitor_screen.dart';
+import 'screens/drowsiness_detected_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/osm_map_screen.dart';
 import 'screens/role_selection_screen.dart';
-import 'screens/fleet_operator_dashboard.dart';
-import 'services/auth_service.dart';
 import 'services/user_role_service.dart';
 
 class DriverSafetyApp extends StatefulWidget {
@@ -85,18 +85,17 @@ class _DriverSafetyAppState extends State<DriverSafetyApp> {
 
       routes: {
         '/dashboard': (context) => const LiveMonitorScreen(),
+        '/drowsiness-detected': (context) => const DrowsinessDetectedScreen(),
         '/map': (context) => const OSMMapScreen(),
+        '/fleet-dashboard': (context) => const FleetOperatorDashboard(),
         '/select-role': (context) {
-          final args =
-              ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, String?>?;
           return RoleSelectionScreen(
-            email: args?['email'] as String?,
-            password: args?['password'] as String?,
+            email: args?['email'],
+            password: args?['password'],
           );
         },
-        '/fleet-dashboard': (context) => const FleetOperatorDashboard(),
-        '/login': (context) => const LoginScreen(),
       },
 
       home: StreamBuilder<User?>(
@@ -109,88 +108,28 @@ class _DriverSafetyAppState extends State<DriverSafetyApp> {
           }
 
           if (snapshot.hasData) {
-            return const _SignedInHome();
+            return FutureBuilder<String?>(
+              future: UserRoleService().fetchRole(snapshot.data!.uid),
+              builder: (context, roleSnapshot) {
+                if (roleSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                if (roleSnapshot.data == 'operator') {
+                  return const FleetOperatorDashboard();
+                }
+                if (roleSnapshot.data == null) {
+                  return const RoleSelectionScreen(email: null, password: null);
+                }
+                return const LiveMonitorScreen();
+              },
+            );
           }
 
           return const LoginScreen();
         },
       ),
-    );
-  }
-}
-
-class _SignedInHome extends StatefulWidget {
-  const _SignedInHome();
-
-  @override
-  State<_SignedInHome> createState() => _SignedInHomeState();
-}
-
-class _SignedInHomeState extends State<_SignedInHome> {
-  final UserRoleService _userRoleService = UserRoleService();
-  final AuthService _authService = AuthService();
-
-  // Cache the future so rebuilds don't re-fire the HTTP call.
-  late final Future<String?> _roleFuture = _loadRole();
-
-  Future<String?> _loadRole() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-    return _userRoleService.fetchRole(user.uid);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String?>(
-      future: _roleFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Scaffold(
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'We could not load your account profile.\n\n${snapshot.error}',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: () async {
-                        await _authService.signOut();
-                      },
-                      child: const Text('Sign out'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-
-        final role = snapshot.data;
-        if (role == 'operator') {
-          return const FleetOperatorDashboard();
-        }
-        if (role == 'driver') {
-          return const LiveMonitorScreen();
-        }
-
-        // No role saved yet — push to role selection so it sits on the
-        // Navigator stack and can navigate away cleanly.
-        return const RoleSelectionScreen(
-          email: null,
-          password: null,
-        );
-      },
     );
   }
 }
