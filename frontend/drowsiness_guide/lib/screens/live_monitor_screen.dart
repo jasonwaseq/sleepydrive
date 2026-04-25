@@ -33,10 +33,11 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     'JETSON_WS_URL',
     defaultValue: 'ws://localhost:8080/ws/alerts?replay=0',
   );
-  static const int _fatigueRiskResetValue = 100;
+  static const int _fatigueRiskResetValue = 0;
   static const int _fatigueRiskStep = 10;
 
   String? _fleetName;
+  String? _displayName;
 
   String? _cityText;
   String? _locErr;
@@ -75,10 +76,12 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
       s.startsWith('Connecting…') || s.startsWith('Reconnecting…');
 
   String get _fatigueRiskStatus {
-    if (_fatigueRisk >= 70) return 'Normal';
-    if (_fatigueRisk >= 40) return 'Warning';
-    if (_fatigueRisk >= 10) return 'High';
-    return 'Critical';
+    if (_fatigueRisk >= 90) return 'Extreme fatigue';
+    if (_fatigueRisk >= 70) return 'Critical fatigue';
+    if (_fatigueRisk >= 50) return 'High fatigue';
+    if (_fatigueRisk >= 30) return 'Moderate fatigue';
+    if (_fatigueRisk >= 10) return 'Low fatigue';
+    return 'No fatigue';
   }
 
   @override
@@ -159,10 +162,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     if (!mounted) return;
     setState(() {
       _latestAlertLevel = levelLabel;
-      _fatigueRisk = (_fatigueRisk - _fatigueRiskStep).clamp(
-        0,
-        _fatigueRiskResetValue,
-      ).toInt();
+      _fatigueRisk = (_fatigueRisk + _fatigueRiskStep).clamp(0, 100);
       _alerts.insert(
         0,
         _DashboardAlert(
@@ -298,8 +298,85 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     try {
       final profile = await UserRoleService().fetchProfile(user.uid);
       if (!mounted) return;
-      setState(() => _fleetName = profile?.fleetName);
+      setState(() {
+        _fleetName = profile?.fleetName;
+        _displayName = profile?.displayName;
+      });
     } catch (_) {}
+  }
+
+  Future<void> _showEditProfileDialog() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final current = _displayName ?? '';
+    final parts = current.split(' ');
+    final firstCtrl = TextEditingController(text: parts.isNotEmpty ? parts.first : '');
+    final lastCtrl = TextEditingController(text: parts.length > 1 ? parts.sublist(1).join(' ') : '');
+    String? errorText;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Edit profile'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: firstCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'First name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: lastCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Last name'),
+              ),
+              if (errorText != null) ...[
+                const SizedBox(height: 8),
+                Text(errorText!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final first = firstCtrl.text.trim();
+                final last = lastCtrl.text.trim();
+                final fullName = [first, last].where((s) => s.isNotEmpty).join(' ');
+                if (fullName.isEmpty) {
+                  setDialogState(() => errorText = 'Please enter at least a first name.');
+                  return;
+                }
+                try {
+                  await UserRoleService().saveRole(
+                    uid: user.uid,
+                    role: 'driver',
+                    email: user.email,
+                    displayName: fullName,
+                  );
+                  if (!mounted) return;
+                  setState(() => _displayName = fullName);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                } catch (e) {
+                  setDialogState(() => errorText = e.toString().replaceFirst('Exception: ', ''));
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    firstCtrl.dispose();
+    lastCtrl.dispose();
   }
 
   Future<void> _showJoinFleetDialog() async {
@@ -382,8 +459,6 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     final bgBottom = isDark ? const Color(0xFF0E1628) : const Color(0xFF7E97B9);
     final titleColor = isDark ? Colors.white : Colors.black;
     final iconColor = isDark ? Colors.white : Colors.black;
-    const driverId = "Sluggish Driver";
-    const vehicle = "SlugMobile";
 
     return Scaffold(
       backgroundColor: bgTop,
@@ -401,6 +476,11 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
           ),
         ),
         actions: [
+          IconButton(
+            onPressed: _showEditProfileDialog,
+            tooltip: 'Edit profile',
+            icon: Icon(Icons.account_circle, color: iconColor),
+          ),
           IconButton(
             onPressed: _onBluetoothTap,
             tooltip: _bleState == 'Connected'
@@ -459,7 +539,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
           padding: const EdgeInsets.all(16),
           child: ListView(
             children: [
-              _HeaderCard(driverId: driverId, vehicle: vehicle, fleetName: _fleetName),
+              _HeaderCard(displayName: _displayName, fleetName: _fleetName, isOnline: _jetsonDeviceState == 'Online'),
               const SizedBox(height: 12),
               _RiskCard(value: _fatigueRisk, label: _fatigueRiskStatus),
               const SizedBox(height: 12),
@@ -549,11 +629,11 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
 // -------------------- Components --------------------
 
 class _HeaderCard extends StatelessWidget {
-  final String driverId;
-  final String vehicle;
+  final String? displayName;
   final String? fleetName;
+  final bool isOnline;
 
-  const _HeaderCard({required this.driverId, required this.vehicle, this.fleetName});
+  const _HeaderCard({this.displayName, this.fleetName, required this.isOnline});
 
   @override
   Widget build(BuildContext context) {
@@ -568,8 +648,6 @@ class _HeaderCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            const Icon(Icons.shield, color: _accentBlue),
-            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -585,14 +663,12 @@ class _HeaderCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    driverId,
+                    displayName ?? '—',
                     style: const TextStyle(
                       color: Colors.black,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(vehicle, style: TextStyle(color: _black(0.6))),
                   if (fleetName != null) ...[
                     const SizedBox(height: 4),
                     Row(
@@ -612,15 +688,16 @@ class _HeaderCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: _accentBlue.withValues(alpha: 0.12),
+                color: isOnline ? const Color(0xFF10B981) : const Color(0xFFEF4444),
                 borderRadius: BorderRadius.circular(999),
               ),
-              child: const Text(
-                "LIVE",
-                style: TextStyle(
-                  color: _accentBlue,
+              child: Text(
+                isOnline ? 'Online' : 'Offline',
+                style: const TextStyle(
+                  color: Colors.white,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
+                  letterSpacing: 0.5,
+                  fontSize: 13,
                 ),
               ),
             ),

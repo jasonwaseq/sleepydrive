@@ -22,6 +22,8 @@ class RoleSelectionScreen extends StatefulWidget {
 class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   final AuthService _authService = AuthService();
   final UserRoleService _userRoleService = UserRoleService();
+  final TextEditingController _firstNameCtrl = TextEditingController();
+  final TextEditingController _lastNameCtrl = TextEditingController();
   final TextEditingController _fleetInviteCtrl = TextEditingController();
   final TextEditingController _deviceIdCtrl = TextEditingController();
 
@@ -30,6 +32,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
   @override
   void dispose() {
+    _firstNameCtrl.dispose();
+    _lastNameCtrl.dispose();
     _fleetInviteCtrl.dispose();
     _deviceIdCtrl.dispose();
     super.dispose();
@@ -110,13 +114,17 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       _errorText = null;
     });
 
+    final firstName = _firstNameCtrl.text.trim();
+    final lastName = _lastNameCtrl.text.trim();
+    final fullName = [firstName, lastName].where((s) => s.isNotEmpty).join(' ');
+
     try {
       final user = await _ensureAuthenticatedUser();
       await _userRoleService.saveRole(
         uid: user.uid,
         role: role,
         email: user.email ?? widget.email,
-        displayName: user.displayName,
+        displayName: fullName.isNotEmpty ? fullName : user.displayName,
         fleetInviteCode: fleetInviteCode,
         deviceId: deviceId,
       );
@@ -229,9 +237,37 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                         ),
                       ),
                       const SizedBox(height: 34),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _SetupField(
+                              controller: _firstNameCtrl,
+                              hint: 'First name',
+                              textColor: textColor,
+                              hintColor: subTextColor,
+                              fillColor: cardColor,
+                              borderColor: borderColor,
+                              capitalization: TextCapitalization.words,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _SetupField(
+                              controller: _lastNameCtrl,
+                              hint: 'Last name',
+                              textColor: textColor,
+                              hintColor: subTextColor,
+                              fillColor: cardColor,
+                              borderColor: borderColor,
+                              capitalization: TextCapitalization.words,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       _SetupField(
                         controller: _fleetInviteCtrl,
-                        hint: 'fleet invite code',
+                        hint: 'Fleet invite code',
                         textColor: textColor,
                         hintColor: subTextColor,
                         fillColor: cardColor,
@@ -411,6 +447,7 @@ class _SetupField extends StatelessWidget {
   final Color hintColor;
   final Color fillColor;
   final Color borderColor;
+  final TextCapitalization capitalization;
 
   const _SetupField({
     required this.controller,
@@ -419,6 +456,7 @@ class _SetupField extends StatelessWidget {
     required this.hintColor,
     required this.fillColor,
     required this.borderColor,
+    this.capitalization = TextCapitalization.characters,
   });
 
   @override
@@ -426,7 +464,7 @@ class _SetupField extends StatelessWidget {
     return TextField(
       controller: controller,
       style: TextStyle(color: textColor),
-      textCapitalization: TextCapitalization.characters,
+      textCapitalization: capitalization,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(color: hintColor),
