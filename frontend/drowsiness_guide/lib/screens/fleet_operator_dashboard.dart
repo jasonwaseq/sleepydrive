@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:drowsiness_guide/app.dart';
 import 'package:drowsiness_guide/services/jetson_websocket_service.dart';
 import 'package:drowsiness_guide/services/auth_service.dart';
 import 'package:drowsiness_guide/services/user_role_service.dart';
@@ -172,10 +171,8 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
         ..clear()
         ..addEntries(
           data.drivers.map(
-            (driver) => MapEntry(
-              driver.uid,
-              _DriverData.fromFleetDriver(driver),
-            ),
+            (driver) =>
+                MapEntry(driver.uid, _DriverData.fromFleetDriver(driver)),
           ),
         );
     });
@@ -186,11 +183,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
 
     if (!mounted) return;
 
-    Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/login',
-        (route) => false,
-    );
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
   Future<void> _removeDriver(_DriverData driver) async {
@@ -208,7 +201,9 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Remove'),
           ),
@@ -227,17 +222,16 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
       );
     } on UserRoleServiceException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = DriverSafetyApp.of(context).isDark;
-    final bgTop = isDark ? const Color(0xFF0B1220) : const Color(0xFFCED8E4);
-    final bgBottom = isDark ? const Color(0xFF0E1628) : const Color(0xFF7E97B9);
+    const bgTop = Color(0xFFCED8E4);
+    const bgBottom = Color(0xFF7E97B9);
 
     final sortedDrivers = _sortedDrivers;
 
@@ -248,9 +242,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: Center(
-              child: _ConnectionBadge(state: _wsState),
-            ),
+            child: Center(child: _ConnectionBadge(state: _wsState)),
           ),
           IconButton(
             onPressed: _isLoadingFleet ? null : _loadFleetDrivers,
@@ -289,29 +281,28 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
                 child: _isLoadingFleet
                     ? const Center(child: CircularProgressIndicator())
                     : _fleetLoadError != null
-                        ? _FleetLoadError(
-                            message: _fleetLoadError!,
-                            onRetry: _loadFleetDrivers,
-                          )
-                        : sortedDrivers.isEmpty
-                            ? _EmptyFleetState(inviteCode: _fleetInviteCode)
-                            : ListView.builder(
-                                itemCount: sortedDrivers.length,
-                                itemBuilder: (context, i) {
-                                  return AnimatedContainer(
-                                    duration: const Duration(milliseconds: 300),
-                                    curve: Curves.easeInOut,
-                                    child: _DriverCard(
-                                      driver: sortedDrivers[i],
-                                      rank: i + 1,
-                                      onViewAlerts: () =>
-                                          _showDriverAlerts(sortedDrivers[i]),
-                                      onRemove: () =>
-                                          _removeDriver(sortedDrivers[i]),
-                                    ),
-                                  );
-                                },
-                              ),
+                    ? _FleetLoadError(
+                        message: _fleetLoadError!,
+                        onRetry: _loadFleetDrivers,
+                      )
+                    : sortedDrivers.isEmpty
+                    ? _EmptyFleetState(inviteCode: _fleetInviteCode)
+                    : ListView.builder(
+                        itemCount: sortedDrivers.length,
+                        itemBuilder: (context, i) {
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                            child: _DriverCard(
+                              driver: sortedDrivers[i],
+                              rank: i + 1,
+                              onViewAlerts: () =>
+                                  _showDriverAlerts(sortedDrivers[i]),
+                              onRemove: () => _removeDriver(sortedDrivers[i]),
+                            ),
+                          );
+                        },
+                      ),
               ),
             ],
           ),
@@ -319,6 +310,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
       ),
     );
   }
+
   void _showDriverAlerts(_DriverData driver) {
     showModalBottomSheet(
       context: context,
@@ -339,8 +331,8 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
                     Text(
                       driver.displayName,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     if (snapshot.connectionState == ConnectionState.waiting)
@@ -468,7 +460,6 @@ class _DriverData {
       lastUpdated: lastUpdated ?? this.lastUpdated,
     );
   }
-
 }
 
 String _driverDisplayName(FleetDriver driver) {
@@ -481,19 +472,27 @@ String _driverDisplayName(FleetDriver driver) {
 
 String _alertLevelLabel(int level) {
   switch (level) {
-    case 0: return 'SAFE';
-    case 1: return 'WARNING';
-    case 2: return 'DANGER';
-    default: return 'UNKNOWN';
+    case 0:
+      return 'SAFE';
+    case 1:
+      return 'WARNING';
+    case 2:
+      return 'DANGER';
+    default:
+      return 'UNKNOWN';
   }
 }
 
 Color _alertLevelColor(int level) {
   switch (level) {
-    case 0: return const Color(0xFF10B981);
-    case 1: return const Color(0xFFF59E0B);
-    case 2: return const Color(0xFFEF4444);
-    default: return Colors.grey;
+    case 0:
+      return const Color(0xFF10B981);
+    case 1:
+      return const Color(0xFFF59E0B);
+    case 2:
+      return const Color(0xFFEF4444);
+    default:
+      return Colors.grey;
   }
 }
 
@@ -540,8 +539,9 @@ class _DriverCard extends StatelessWidget {
       driver.risk,
       hasFatigueData: driver.hasFatigueData,
     );
-    final deviceText =
-        driver.deviceId == null ? 'No device assigned' : 'Device: ${driver.deviceId}';
+    final deviceText = driver.deviceId == null
+        ? 'No device assigned'
+        : 'Device: ${driver.deviceId}';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -594,10 +594,7 @@ class _DriverCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      _StatusBadge(
-                        label: driver.status,
-                        color: color,
-                      ),
+                      _StatusBadge(label: driver.status, color: color),
                       const SizedBox(width: 8),
                       _StatusBadge(
                         label: driver.isOnline ? 'Live' : 'Offline',
@@ -619,10 +616,7 @@ class _DriverCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     'Last updated: ${_formatTime(driver.lastUpdated)}',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   ),
                 ],
               ),
@@ -635,7 +629,10 @@ class _DriverCard extends StatelessWidget {
             IconButton(
               tooltip: 'Remove from fleet',
               onPressed: onRemove,
-              icon: const Icon(Icons.person_remove_rounded, color: Color(0xFFEF4444)),
+              icon: const Icon(
+                Icons.person_remove_rounded,
+                color: Color(0xFFEF4444),
+              ),
             ),
           ],
         ),
@@ -648,10 +645,7 @@ class _StatusBadge extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _StatusBadge({
-    required this.label,
-    required this.color,
-  });
+  const _StatusBadge({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -681,7 +675,9 @@ class _SummaryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = drivers.length;
-    final critical = drivers.where((d) => d.hasFatigueData && d.risk >= 70).length;
+    final critical = drivers
+        .where((d) => d.hasFatigueData && d.risk >= 70)
+        .length;
     final elevated = drivers
         .where((d) => d.hasFatigueData && d.risk >= 40 && d.risk < 70)
         .length;
@@ -739,7 +735,9 @@ class _ConnectionBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isConnected = state == 'Connected';
-    final color = isConnected ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
+    final color = isConnected
+        ? const Color(0xFF10B981)
+        : const Color(0xFFF59E0B);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -763,10 +761,7 @@ class _FleetHeader extends StatelessWidget {
   final String fleetName;
   final String? inviteCode;
 
-  const _FleetHeader({
-    required this.fleetName,
-    required this.inviteCode,
-  });
+  const _FleetHeader({required this.fleetName, required this.inviteCode});
 
   @override
   Widget build(BuildContext context) {
@@ -814,7 +809,7 @@ class _FleetHeader extends StatelessWidget {
                   );
                 },
                 icon: const Icon(Icons.copy_rounded),
-            ),
+              ),
           ],
         ),
       ),
@@ -834,10 +829,7 @@ class _FleetLoadError extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
 
-  const _FleetLoadError({
-    required this.message,
-    required this.onRetry,
-  });
+  const _FleetLoadError({required this.message, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -849,17 +841,17 @@ class _FleetLoadError extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             'Could not load fleet',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
           ),
           const SizedBox(height: 14),
           FilledButton.icon(
@@ -880,24 +872,21 @@ class _EmptyFleetState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted =
-        Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.72);
+    final muted = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.color?.withOpacity(0.72);
 
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.sensors_rounded,
-            size: 48,
-            color: muted,
-          ),
+          Icon(Icons.sensors_rounded, size: 48, color: muted),
           const SizedBox(height: 12),
           Text(
             'No assigned drivers yet',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
@@ -905,9 +894,9 @@ class _EmptyFleetState extends StatelessWidget {
                 ? 'Drivers will appear here after they join your fleet.'
                 : 'Drivers will appear here after they join with invite code $inviteCode.',
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: muted,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: muted),
           ),
         ],
       ),

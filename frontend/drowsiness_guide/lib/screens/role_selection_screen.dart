@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:drowsiness_guide/app.dart';
 import 'package:drowsiness_guide/services/auth_service.dart';
 import 'package:drowsiness_guide/services/user_role_service.dart';
 
@@ -166,37 +165,21 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   }
 
   Future<void> _handleOperatorSelection() async {
-    await _saveRoleAndRoute(
-      role: 'operator',
-    );
+    await _saveRoleAndRoute(role: 'operator');
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = DriverSafetyApp.of(context).isDark;
-    final bgTop = isDark ? const Color(0xFF0D1117) : const Color(0xFFCED8E4);
-    final bgBottom = isDark ? const Color(0xFF1A2332) : const Color(0xFF7E97B9);
-
-    final textColor = isDark ? Colors.white : Colors.black;
-    final subTextColor = isDark
-        ? Colors.white.withOpacity(0.72)
-        : Colors.black.withOpacity(0.7);
-
-    final cardColor = isDark
-        ? const Color(0xFF142033)
-        : Colors.white.withOpacity(0.96);
-
-    final borderColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.08);
-
-    final primaryColor =
-        isDark ? const Color(0xFF6E95DC) : const Color(0xFF5E8AD6);
+    const bgTop = Color(0xFFCED8E4);
+    const bgBottom = Color(0xFF7E97B9);
+    const textColor = Colors.black;
+    final subTextColor = Colors.black.withOpacity(0.7);
+    final cardColor = Colors.white.withOpacity(0.96);
+    final borderColor = Colors.black.withOpacity(0.08);
+    const primaryColor = Color(0xFF5E8AD6);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Choose your role'),
-      ),
+      appBar: AppBar(title: const Text('Choose your role')),
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -231,10 +214,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                             ? "Select how you'll use the platform"
                             : "Finish setting up your account",
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: subTextColor,
-                          fontSize: 16,
-                        ),
+                        style: TextStyle(color: subTextColor, fontSize: 16),
                       ),
                       const SizedBox(height: 34),
                       Row(
@@ -326,10 +306,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                         onPressed: _isLoading ? null : _handleBack,
                         child: Text(
                           'Back',
-                          style: TextStyle(
-                            color: subTextColor,
-                            fontSize: 15,
-                          ),
+                          style: TextStyle(color: subTextColor, fontSize: 15),
                         ),
                       ),
                     ],

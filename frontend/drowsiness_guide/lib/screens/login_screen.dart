@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:drowsiness_guide/app.dart';
 import 'package:drowsiness_guide/services/auth_service.dart';
 import 'package:drowsiness_guide/services/user_role_service.dart';
 
@@ -86,10 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.pushNamed(
         context,
         '/select-role',
-        arguments: {
-          'email': email,
-          'password': password,
-        },
+        arguments: {'email': email, 'password': password},
       );
       return;
     }
@@ -203,44 +199,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgTop = isDark ? const Color(0xFF0D1117) : const Color(0xFFCED8E4);
-    final bgBottom =
-        isDark ? const Color(0xFF1A2332) : const Color(0xFF7E97B9);
-
-    final textColor = isDark ? Colors.white : Colors.black;
-    final subTextColor = isDark
-        ? Colors.white.withValues(alpha: 0.7)
-        : Colors.black.withValues(alpha: 0.7);
-
-    final fieldFill = isDark
-        ? const Color(0xFF1E2D40)
-        : Colors.white.withValues(alpha: 0.96);
-
-    final hintColor = isDark
-        ? Colors.white.withValues(alpha: 0.42)
-        : Colors.black.withValues(alpha: 0.55);
-
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.10);
-
-    final focusBorder = isDark
-        ? Colors.white.withValues(alpha: 0.28)
-        : Colors.black.withValues(alpha: 0.22);
-
-    final primaryButtonColor =
-        isDark ? const Color(0xFF6E95DC) : const Color(0xFF5E8AD6);
+    const bgTop = Color(0xFFCED8E4);
+    const bgBottom = Color(0xFF7E97B9);
+    const textColor = Colors.black;
+    final subTextColor = Colors.black.withValues(alpha: 0.7);
+    final fieldFill = Colors.white.withValues(alpha: 0.96);
+    final hintColor = Colors.black.withValues(alpha: 0.55);
+    final borderColor = Colors.black.withValues(alpha: 0.10);
+    final focusBorder = Colors.black.withValues(alpha: 0.22);
+    const primaryButtonColor = Color(0xFF5E8AD6);
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.small(
-        tooltip: 'Toggle theme',
-        onPressed: () {
-          debugPrint('theme toggled');
-          DriverSafetyApp.of(context).toggleTheme();
-        },
-        child: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
-      ),
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -300,7 +269,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.12),
+                                color: Colors.black.withValues(alpha: 0.12),
                                 blurRadius: 18,
                                 offset: const Offset(0, 8),
                               ),
@@ -318,7 +287,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: Text(
                               _isLoading
                                   ? 'Please wait...'
-                                  : (_isCreateMode ? 'Create account' : 'Log in'),
+                                  : (_isCreateMode
+                                        ? 'Create account'
+                                        : 'Log in'),
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w700,
@@ -352,10 +323,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 12),
                       Text(
                         'or',
-                        style: TextStyle(
-                          color: subTextColor,
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: subTextColor, fontSize: 14),
                       ),
                       const SizedBox(height: 16),
                       SizedBox(
@@ -366,7 +334,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.12),
+                                color: Colors.black.withValues(alpha: 0.12),
                                 blurRadius: 18,
                                 offset: const Offset(0, 8),
                               ),

@@ -8,57 +8,15 @@ import 'screens/osm_map_screen.dart';
 import 'screens/role_selection_screen.dart';
 import 'services/user_role_service.dart';
 
-class DriverSafetyApp extends StatefulWidget {
+class DriverSafetyApp extends StatelessWidget {
   const DriverSafetyApp({super.key});
-
-  static _DriverSafetyAppState of(BuildContext context) =>
-      context.findAncestorStateOfType<_DriverSafetyAppState>()!;
-
-  @override
-  State<DriverSafetyApp> createState() => _DriverSafetyAppState();
-}
-
-class _DriverSafetyAppState extends State<DriverSafetyApp> {
-  ThemeMode _themeMode = ThemeMode.dark;
-
-  void toggleTheme() {
-    setState(() {
-      _themeMode =
-          _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-    });
-  }
-
-  bool get isDark => _themeMode == ThemeMode.dark;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Drowsiness Guide',
-      themeMode: _themeMode,
-
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0B1220),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFFE5E7EB),
-          surface: Color(0xFF0E1628),
-        ),
-        cardTheme: const CardThemeData(
-          color: Color(0xFF0E1628),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(18)),
-            side: BorderSide(color: Color(0xFF22304A), width: 1),
-          ),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          centerTitle: true,
-        ),
-      ),
+      themeMode: ThemeMode.light,
 
       theme: ThemeData(
         useMaterial3: true,
@@ -90,8 +48,9 @@ class _DriverSafetyAppState extends State<DriverSafetyApp> {
         '/map': (context) => const OSMMapScreen(),
         '/fleet-dashboard': (context) => const FleetOperatorDashboard(),
         '/select-role': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments
-              as Map<String, String?>?;
+          final args =
+              ModalRoute.of(context)!.settings.arguments
+                  as Map<String, String?>?;
           return RoleSelectionScreen(
             email: args?['email'],
             password: args?['password'],

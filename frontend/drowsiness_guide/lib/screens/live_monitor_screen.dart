@@ -7,7 +7,6 @@ import '../services/ble_service.dart';
 import '../services/jetson_websocket_service.dart';
 import '../services/user_role_service.dart';
 import '../secrets.dart';
-import '../app.dart';
 import '../services/auth_service.dart';
 
 // -------------------- Color System --------------------
@@ -311,8 +310,12 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
 
     final current = _displayName ?? '';
     final parts = current.split(' ');
-    final firstCtrl = TextEditingController(text: parts.isNotEmpty ? parts.first : '');
-    final lastCtrl = TextEditingController(text: parts.length > 1 ? parts.sublist(1).join(' ') : '');
+    final firstCtrl = TextEditingController(
+      text: parts.isNotEmpty ? parts.first : '',
+    );
+    final lastCtrl = TextEditingController(
+      text: parts.length > 1 ? parts.sublist(1).join(' ') : '',
+    );
     String? errorText;
 
     await showDialog<void>(
@@ -336,7 +339,10 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
               ),
               if (errorText != null) ...[
                 const SizedBox(height: 8),
-                Text(errorText!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+                Text(
+                  errorText!,
+                  style: const TextStyle(color: Colors.red, fontSize: 13),
+                ),
               ],
             ],
           ),
@@ -349,9 +355,14 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
               onPressed: () async {
                 final first = firstCtrl.text.trim();
                 final last = lastCtrl.text.trim();
-                final fullName = [first, last].where((s) => s.isNotEmpty).join(' ');
+                final fullName = [
+                  first,
+                  last,
+                ].where((s) => s.isNotEmpty).join(' ');
                 if (fullName.isEmpty) {
-                  setDialogState(() => errorText = 'Please enter at least a first name.');
+                  setDialogState(
+                    () => errorText = 'Please enter at least a first name.',
+                  );
                   return;
                 }
                 try {
@@ -365,7 +376,12 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
                   setState(() => _displayName = fullName);
                   if (ctx.mounted) Navigator.pop(ctx);
                 } catch (e) {
-                  setDialogState(() => errorText = e.toString().replaceFirst('Exception: ', ''));
+                  setDialogState(
+                    () => errorText = e.toString().replaceFirst(
+                      'Exception: ',
+                      '',
+                    ),
+                  );
                 }
               },
               child: const Text('Save'),
@@ -401,9 +417,9 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
         },
         onError: (message) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(message)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
         },
       ),
     );
@@ -414,11 +430,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
 
     if (!mounted) return;
 
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      '/login',
-      (route) => false,
-    );
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
   Future<void> _loadWeather(double lat, double lon) async {
@@ -454,11 +466,10 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = DriverSafetyApp.of(context).isDark;
-    final bgTop = isDark ? const Color(0xFF0B1220) : const Color(0xFFCED8E4);
-    final bgBottom = isDark ? const Color(0xFF0E1628) : const Color(0xFF7E97B9);
-    final titleColor = isDark ? Colors.white : Colors.black;
-    final iconColor = isDark ? Colors.white : Colors.black;
+    const bgTop = Color(0xFFCED8E4);
+    const bgBottom = Color(0xFF7E97B9);
+    const titleColor = Colors.black;
+    const iconColor = Colors.black;
 
     return Scaffold(
       backgroundColor: bgTop,
@@ -506,9 +517,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
                   : _wsIsBusy(_jetsonWsState)
                   ? Icons.sync
                   : Icons.wifi_tethering_off,
-              color: _wsIsConnected(_jetsonWsState)
-                  ? _accentBlue
-                  : iconColor,
+              color: _wsIsConnected(_jetsonWsState) ? _accentBlue : iconColor,
             ),
           ),
           IconButton(
@@ -539,7 +548,11 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
           padding: const EdgeInsets.all(16),
           child: ListView(
             children: [
-              _HeaderCard(displayName: _displayName, fleetName: _fleetName, isOnline: _jetsonDeviceState == 'Online'),
+              _HeaderCard(
+                displayName: _displayName,
+                fleetName: _fleetName,
+                isOnline: _jetsonDeviceState == 'Online',
+              ),
               const SizedBox(height: 12),
               _RiskCard(value: _fatigueRisk, label: _fatigueRiskStatus),
               const SizedBox(height: 12),
@@ -605,8 +618,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
               ),
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: () =>
-                    Navigator.pushNamed(context, '/map'),
+                onTap: () => Navigator.pushNamed(context, '/map'),
                 child: const Center(
                   child: Text(
                     'DROWSINESS DETECTED',
@@ -673,7 +685,11 @@ class _HeaderCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(Icons.local_shipping_rounded, size: 13, color: _black(0.45)),
+                        Icon(
+                          Icons.local_shipping_rounded,
+                          size: 13,
+                          color: _black(0.45),
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           fleetName!,
@@ -688,7 +704,9 @@ class _HeaderCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: isOnline ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                color: isOnline
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFFEF4444),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
