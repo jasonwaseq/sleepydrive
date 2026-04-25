@@ -25,7 +25,7 @@ any machine:    This is the command to run !!!
 
 `cd frontend\drowsiness_guide`   
 
-`flutter run -d chrome --dart-define=BACKEND_BASE_URL=http://localhost:8080`
+`flutter run --dart-define=JETSON_WS_URL=wss://sleepydrive.onrender.com/ws/alerts?replay=0`
 
 
 ## How to run the emulator
