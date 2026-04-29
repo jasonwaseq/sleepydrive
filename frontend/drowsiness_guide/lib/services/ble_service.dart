@@ -19,14 +19,30 @@ class BleAlert {
   final DateTime timestamp;
 
   BleAlert({required this.level, required this.message})
-      : timestamp = DateTime.now();
+    : timestamp = DateTime.now();
+
+  static BleAlert? tryParsePayload(String payload) {
+    final text = payload.trim();
+    if (text.isEmpty) return null;
+    final pipe = text.indexOf('|');
+    if (pipe < 0) return null;
+    final level = int.tryParse(text.substring(0, pipe).trim());
+    if (level == null || level < 0) return null;
+    final message = text.substring(pipe + 1).trim();
+    if (message.isEmpty) return null;
+    return BleAlert(level: level, message: message);
+  }
 
   String get levelLabel {
     switch (level) {
-      case 0:  return 'SAFE';
-      case 1:  return 'WARNING';
-      case 2:  return 'DANGER';
-      default: return 'UNKNOWN';
+      case 0:
+        return 'SAFE';
+      case 1:
+        return 'WARNING';
+      case 2:
+        return 'DANGER';
+      default:
+        return 'UNKNOWN';
     }
   }
 }
@@ -34,6 +50,7 @@ class BleAlert {
 /// Minimal BLE service — scan for "SleepyDrive", connect, stream alerts.
 class BleService {
   BluetoothDevice? _device;
+  BluetoothDevice? _lastDevice;
   StreamSubscription? _notifySub;
   StreamSubscription? _connSub;
 
@@ -56,6 +73,12 @@ class BleService {
   bool _disposed = false;
   bool _connecting = false; // guard against concurrent scanAndConnect() calls
   Timer? _reconnectTimer;
+  int _reconnectAttempt = 0;
+
+  String _packetBuffer = '';
+  Timer? _packetFlushTimer;
+  String? _lastPacketText;
+  DateTime? _lastPacketAt;
 
   void _setState(String s) {
     _currentState = s;
@@ -103,11 +126,16 @@ class BleService {
   Future<BluetoothDevice?> _scanForSleepyDrive(_ScanMode mode) async {
     BluetoothDevice? found;
     Object? scanError;
+    bool stopRequested = false;
     final scanSub = FlutterBluePlus.onScanResults.listen(
       (results) {
         for (final r in results) {
           if (_matchesDevice(r)) {
             found = r.device;
+            if (!stopRequested) {
+              stopRequested = true;
+              unawaited(FlutterBluePlus.stopScan());
+            }
           }
         }
       },
@@ -123,21 +151,19 @@ class BleService {
       final names = mode == _ScanMode.serviceOrName
           ? [_deviceName]
           : <String>[];
-      final keywords = mode == _ScanMode.keyword
-          ? [_deviceName]
-          : <String>[];
+      final keywords = mode == _ScanMode.keyword ? [_deviceName] : <String>[];
       await FlutterBluePlus.startScan(
         withServices: services,
         withNames: names,
         withKeywords: keywords,
-        timeout: const Duration(seconds: 8),
+        timeout: const Duration(seconds: 6),
         androidUsesFineLocation: true,
-        androidCheckLocationServices: false,
+        androidCheckLocationServices: true,
       );
       await FlutterBluePlus.isScanning
           .where((isScanning) => isScanning == false)
           .first
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 8));
     } catch (e) {
       scanError ??= e;
     } finally {
@@ -194,8 +220,14 @@ class BleService {
           _setState('Bluetooth is off');
           await Future.delayed(const Duration(seconds: 1));
           _setState('Disconnected');
+          _scheduleReconnect();
           return;
         }
+      }
+
+      final cached = _lastDevice;
+      if (cached != null) {
+        if (await _connectToDevice(cached)) return;
       }
 
       _setState('Scanning…');
@@ -237,90 +269,7 @@ class BleService {
         return;
       }
 
-      _setState('Connecting…');
-
-      // Cancel the old connSub NOW — before connect() — so no stale listener
-      // is alive to fire spurious disconnect events during the setup sequence.
-      _connSub?.cancel();
-      _connSub = null;
-
-      try {
-        await found.connect(timeout: const Duration(seconds: 10));
-        _device = found;
-
-        // High-priority connection request: tightens the connection interval to
-        // 7.5–15 ms, making supervision-timeout disconnects far less likely.
-        if (defaultTargetPlatform == TargetPlatform.android) {
-          try {
-            await found
-                .requestConnectionPriority(
-                  connectionPriorityRequest: ConnectionPriority.high,
-                )
-                .timeout(const Duration(seconds: 5));
-          } catch (_) {}
-          // Requesting MTU forces a GATT handshake — known fix for GATT_ERROR 133.
-          try {
-            await found.requestMtu(512).timeout(const Duration(seconds: 5));
-          } catch (_) {}
-        }
-
-        _setState('Connected');
-
-        // React to disconnection on this specific device object.
-        _connSub = found.connectionState.listen((state) {
-          if (state == BluetoothConnectionState.disconnected) {
-            _notifySub?.cancel();
-            _notifySub = null;
-            final staleDevice = _device;
-            _device = null;
-            _setState('Disconnected');
-            // Flush Android GATT state before reconnecting to prevent
-            // GATT_ERROR 133 on the next connect attempt.
-            Future(() async {
-              try { await staleDevice?.disconnect(); } catch (_) {}
-              _scheduleReconnect();
-            });
-          }
-        });
-
-        // Timeout so a mid-connection Jetson drop doesn't hang forever.
-        final services = await found
-            .discoverServices()
-            .timeout(const Duration(seconds: 10));
-        debugPrint('[BLE] discovered ${services.length} services');
-        for (final svc in services) {
-          debugPrint('[BLE]   service: ${svc.uuid}');
-        }
-        bool subscribed = false;
-        for (final svc in services) {
-          if (svc.uuid.toString().toLowerCase() == _serviceUuid) {
-            for (final ch in svc.characteristics) {
-              debugPrint('[BLE]     char: ${ch.uuid} notify=${ch.properties.notify}');
-              if (ch.uuid.toString().toLowerCase() == _charUuid) {
-                if (!ch.properties.notify) {
-                  debugPrint('[BLE] characteristic found but notify not supported');
-                  _setState('Connected (notify unsupported)');
-                  return;
-                }
-                await _notifySub?.cancel();
-                _notifySub = ch.onValueReceived.listen(_onData);
-                await ch.setNotifyValue(true);
-                subscribed = true;
-                _setState('Connected');
-                debugPrint('[BLE] subscribed to alert characteristic');
-                return;
-              }
-            }
-          }
-        }
-        if (!subscribed) {
-          debugPrint('[BLE] connected but alert service/characteristic not found');
-          _setState('Connected (no alert service)');
-        }
-      } catch (e) {
-        debugPrint('[BLE] connection error: $e');
-        _setState('Connection failed');
-        await Future.delayed(const Duration(seconds: 2));
+      if (!await _connectToDevice(found)) {
         _setState('Disconnected');
         _scheduleReconnect();
       }
@@ -329,12 +278,159 @@ class BleService {
     }
   }
 
+  Future<bool> _connectToDevice(BluetoothDevice found) async {
+    if (_disposed) return false;
+
+    _setState('Connecting…');
+    _packetBuffer = '';
+    _packetFlushTimer?.cancel();
+
+    await _notifySub?.cancel();
+    _notifySub = null;
+    await _connSub?.cancel();
+    _connSub = null;
+
+    try {
+      if (found.isDisconnected) {
+        await found.connect(timeout: const Duration(seconds: 12), mtu: null);
+      }
+      _device = found;
+      _lastDevice = found;
+
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        try {
+          await found
+              .requestConnectionPriority(
+                connectionPriorityRequest: ConnectionPriority.high,
+              )
+              .timeout(const Duration(seconds: 4));
+        } catch (e) {
+          debugPrint('[BLE] connection priority request skipped: $e');
+        }
+        try {
+          final mtu = await found
+              .requestMtu(247)
+              .timeout(const Duration(seconds: 6));
+          debugPrint('[BLE] MTU set to $mtu');
+        } catch (e) {
+          debugPrint('[BLE] MTU request skipped: $e');
+        }
+      }
+
+      _connSub = found.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          _handleDeviceDisconnected(found);
+        }
+      });
+
+      final services = await found
+          .discoverServices(subscribeToServicesChanged: false)
+          .timeout(const Duration(seconds: 10));
+      debugPrint('[BLE] discovered ${services.length} services');
+      for (final svc in services) {
+        debugPrint('[BLE]   service: ${svc.uuid}');
+      }
+
+      for (final svc in services) {
+        if (svc.uuid.toString().toLowerCase() != _serviceUuid) continue;
+        for (final ch in svc.characteristics) {
+          debugPrint(
+            '[BLE]     char: ${ch.uuid} notify=${ch.properties.notify} '
+            'indicate=${ch.properties.indicate}',
+          );
+          if (ch.uuid.toString().toLowerCase() != _charUuid) continue;
+          if (!ch.properties.notify && !ch.properties.indicate) {
+            throw StateError('alert characteristic does not support notify');
+          }
+
+          final sub = ch.onValueReceived.listen(
+            _onData,
+            onError: (Object e, StackTrace st) {
+              debugPrint('[BLE] notification stream error: $e');
+            },
+          );
+          found.cancelWhenDisconnected(sub);
+          _notifySub = sub;
+
+          await ch.setNotifyValue(true).timeout(const Duration(seconds: 8));
+          try {
+            final current = await ch
+                .read(timeout: 5)
+                .timeout(const Duration(seconds: 6));
+            if (current.isNotEmpty) {
+              _onData(current);
+            }
+          } catch (e) {
+            debugPrint('[BLE] initial characteristic read skipped: $e');
+          }
+
+          _reconnectAttempt = 0;
+          _setState('Connected');
+          debugPrint('[BLE] subscribed to alert characteristic');
+          return true;
+        }
+      }
+
+      throw StateError('alert service/characteristic not found');
+    } catch (e) {
+      debugPrint('[BLE] connection/setup error: $e');
+      await _cleanupFailedConnection(found);
+      _setState('Connection failed');
+      await Future.delayed(const Duration(milliseconds: 600));
+      return false;
+    }
+  }
+
+  void _handleDeviceDisconnected(BluetoothDevice device) {
+    if (_device != null && _device != device) return;
+    _notifySub?.cancel();
+    _notifySub = null;
+    unawaited(_connSub?.cancel() ?? Future<void>.value());
+    _connSub = null;
+    _device = null;
+    _packetBuffer = '';
+    _packetFlushTimer?.cancel();
+    if (_currentState != 'Disconnected') {
+      _setState('Disconnected');
+    }
+    Future(() async {
+      try {
+        await device
+            .disconnect(queue: false)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {}
+      _scheduleReconnect();
+    });
+  }
+
+  Future<void> _cleanupFailedConnection(BluetoothDevice device) async {
+    await _notifySub?.cancel();
+    _notifySub = null;
+    await _connSub?.cancel();
+    _connSub = null;
+    if (_device == device) {
+      _device = null;
+    }
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        device.isConnected) {
+      try {
+        await device.clearGattCache().timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
+    try {
+      await device.disconnect(queue: false).timeout(const Duration(seconds: 5));
+    } catch (_) {}
+  }
+
   /// Schedule a reconnection attempt after a short backoff, unless we were
   /// explicitly disconnected by the user.
   void _scheduleReconnect() {
     if (!_autoReconnect || _disposed) return;
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+    _reconnectAttempt = (_reconnectAttempt + 1).clamp(1, 5).toInt();
+    final delay = Duration(seconds: 3 * (1 << (_reconnectAttempt - 1)));
+    _reconnectTimer = Timer(delay, () {
       if (_autoReconnect && !_disposed && _currentState == 'Disconnected') {
         debugPrint('[BLE] auto-reconnecting…');
         scanAndConnect();
@@ -344,29 +440,66 @@ class BleService {
 
   void _onData(List<int> raw) {
     try {
-      final text = utf8.decode(raw);
-      // Format: "<level>|<message>"
-      final pipe = text.indexOf('|');
-      if (pipe < 0) return; // keep-alive ping or malformed — ignore silently
-      final level = int.tryParse(text.substring(0, pipe)) ?? 0;
-      if (level < 0) return; // level == -1 is a Jetson keep-alive heartbeat
-      final message = text.substring(pipe + 1);
-      _alertCtrl.add(BleAlert(level: level, message: message));
+      final text = utf8.decode(raw, allowMalformed: true);
+      _packetBuffer += text;
+      _drainCompletePackets();
+      if (_packetBuffer.isEmpty) {
+        _packetFlushTimer?.cancel();
+      } else if (!_packetBuffer.contains('\n')) {
+        _packetFlushTimer?.cancel();
+        _packetFlushTimer = Timer(const Duration(milliseconds: 150), () {
+          final pending = _packetBuffer;
+          _packetBuffer = '';
+          _handlePacket(pending);
+        });
+      }
     } catch (e) {
       debugPrint('[BLE] failed to decode packet: $e');
     }
+  }
+
+  void _drainCompletePackets() {
+    var newline = _packetBuffer.indexOf('\n');
+    while (newline >= 0) {
+      final packet = _packetBuffer.substring(0, newline);
+      _packetBuffer = _packetBuffer.substring(newline + 1);
+      _handlePacket(packet);
+      newline = _packetBuffer.indexOf('\n');
+    }
+  }
+
+  void _handlePacket(String packet) {
+    final normalized = packet.trim();
+    if (normalized.isEmpty) return;
+
+    final now = DateTime.now();
+    final lastAt = _lastPacketAt;
+    if (_lastPacketText == normalized &&
+        lastAt != null &&
+        now.difference(lastAt) < const Duration(seconds: 2)) {
+      return;
+    }
+
+    final alert = BleAlert.tryParsePayload(normalized);
+    if (alert == null) return;
+
+    _lastPacketText = normalized;
+    _lastPacketAt = now;
+    _alertCtrl.add(alert);
   }
 
   /// Disconnect from the current device. Disables auto-reconnect.
   Future<void> disconnect() async {
     _autoReconnect = false;
     _reconnectTimer?.cancel();
+    _packetFlushTimer?.cancel();
     await _notifySub?.cancel();
     _notifySub = null;
     await _connSub?.cancel();
     _connSub = null;
     await _device?.disconnect();
     _device = null;
+    _packetBuffer = '';
     _setState('Disconnected');
   }
 
@@ -375,6 +508,7 @@ class BleService {
     _disposed = true;
     _autoReconnect = false;
     _reconnectTimer?.cancel();
+    _packetFlushTimer?.cancel();
     _notifySub?.cancel();
     _connSub?.cancel();
     _alertCtrl.close();
