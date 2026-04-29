@@ -240,8 +240,24 @@ class BleService {
       _setState('Connecting…');
 
       try {
+        // Pre-emptively disconnect to clear any stale GATT state Android
+        // may be holding from a previous connection to this device.
+        try {
+          await found.disconnect();
+          await Future.delayed(const Duration(milliseconds: 300));
+        } catch (_) {}
+
         await found.connect(timeout: const Duration(seconds: 10));
         _device = found;
+
+        // Requesting MTU right after connect forces a full GATT handshake.
+        // This is a well-known workaround for Android GATT_ERROR 133 that
+        // otherwise causes connections to silently fail or drop soon after.
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          try {
+            await found.requestMtu(512).timeout(const Duration(seconds: 5));
+          } catch (_) {}
+        }
 
         _setState('Connected');
 
@@ -251,8 +267,16 @@ class BleService {
           if (state == BluetoothConnectionState.disconnected) {
             _notifySub?.cancel();
             _notifySub = null;
+            final staleDevice = _device;
+            _device = null;
             _setState('Disconnected');
-            _scheduleReconnect();
+            // Explicitly flush Android's GATT cache before reconnecting.
+            // Without this, the next connect() hits a ghost entry and
+            // immediately fails with GATT_ERROR 133.
+            Future(() async {
+              try { await staleDevice?.disconnect(); } catch (_) {}
+              _scheduleReconnect();
+            });
           }
         });
 
