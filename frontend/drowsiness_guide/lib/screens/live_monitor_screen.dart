@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/weather_service.dart';
@@ -49,7 +50,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
 
   // ── BLE ──
   final BleService _ble = BleService();
-  String _bleState = 'Disconnected';
+  String _bleState = kIsWeb ? 'Tap Bluetooth' : 'Disconnected';
   StreamSubscription? _bleStateSub;
   StreamSubscription? _bleAlertSub;
 
@@ -105,7 +106,9 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
         source: 'BLE',
       );
     });
-    unawaited(_ble.scanAndConnect());
+    if (!kIsWeb) {
+      unawaited(_ble.scanAndConnect());
+    }
 
     // Listen for Jetson WebSocket status + alerts
     _jetsonWsStateSub = _jetsonWs.connectionState.listen((state) {
@@ -149,9 +152,11 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
         _jetsonWs.connect();
       }
       // OS kills BLE in background on many Android devices — reconnect on resume.
-      if (_bleState != 'Connected' &&
+      if (!kIsWeb &&
+          _bleState != 'Connected' &&
           _bleState != 'Scanning…' &&
           _bleState != 'Connecting…' &&
+          _bleState != 'Select SleepyDrive…' &&
           _bleState != 'Waiting for Bluetooth…') {
         unawaited(_ble.scanAndConnect());
       }
@@ -254,8 +259,9 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
       await _ble.disconnect();
     } else if (_bleState != 'Scanning…' &&
         _bleState != 'Connecting…' &&
+        _bleState != 'Select SleepyDrive…' &&
         _bleState != 'Waiting for Bluetooth…') {
-      await _ble.scanAndConnect();
+      await _ble.scanAndConnect(userInitiated: true);
     }
   }
 
@@ -507,7 +513,9 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
             icon: Icon(
               _bleState == 'Connected'
                   ? Icons.bluetooth_connected
-                  : _bleState == 'Scanning…' || _bleState == 'Connecting…'
+                  : _bleState == 'Scanning…' ||
+                        _bleState == 'Connecting…' ||
+                        _bleState == 'Select SleepyDrive…'
                   ? Icons.bluetooth_searching
                   : Icons.bluetooth,
               color: _bleState == 'Connected' ? _accentBlue : iconColor,

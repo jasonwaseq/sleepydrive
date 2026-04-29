@@ -9,7 +9,7 @@ const _serviceUuid = "12345678-1234-5678-1234-56789abcdef0";
 const _charUuid = "12345678-1234-5678-1234-56789abcdef1";
 const _deviceName = "SleepyDrive";
 
-enum _ScanMode { serviceOrName, keyword }
+enum _ScanMode { serviceOrName, keyword, webChooser }
 
 /// A parsed alert from the Jetson BLE server.
 class BleAlert {
@@ -64,7 +64,7 @@ class BleService {
   /// "Connected", "Disconnected".
   Stream<String> get connectionState => _stateCtrl.stream;
 
-  String _currentState = 'Disconnected';
+  String _currentState = kIsWeb ? 'Tap Bluetooth' : 'Disconnected';
   String get currentState => _currentState;
 
   // Auto-reconnect state: true while we own a connection attempt.
@@ -130,7 +130,7 @@ class BleService {
     final scanSub = FlutterBluePlus.onScanResults.listen(
       (results) {
         for (final r in results) {
-          if (_matchesDevice(r)) {
+          if (_matchesDevice(r) || (kIsWeb && mode == _ScanMode.webChooser)) {
             found = r.device;
             if (!stopRequested) {
               stopRequested = true;
@@ -145,17 +145,22 @@ class BleService {
     );
 
     try {
-      final services = mode == _ScanMode.serviceOrName
-          ? [Guid(_serviceUuid)]
+      final serviceGuid = Guid(_serviceUuid);
+      final services = !kIsWeb && mode == _ScanMode.serviceOrName
+          ? [serviceGuid]
           : <Guid>[];
       final names = mode == _ScanMode.serviceOrName
           ? [_deviceName]
           : <String>[];
-      final keywords = mode == _ScanMode.keyword ? [_deviceName] : <String>[];
+      final keywords = !kIsWeb && mode == _ScanMode.keyword
+          ? [_deviceName]
+          : <String>[];
+      final webOptionalServices = kIsWeb ? [serviceGuid] : <Guid>[];
       await FlutterBluePlus.startScan(
         withServices: services,
         withNames: names,
         withKeywords: keywords,
+        webOptionalServices: webOptionalServices,
         timeout: const Duration(seconds: 6),
         androidUsesFineLocation: true,
         androidCheckLocationServices: true,
@@ -177,10 +182,15 @@ class BleService {
   }
 
   /// Scan for the SleepyDrive device and connect.
-  /// Set [autoReconnect] to false only when called from an explicit
-  /// user-initiated retry; the internal reconnect path always leaves it true.
-  Future<void> scanAndConnect() async {
+  ///
+  /// Web Bluetooth can only show its device chooser from a user gesture, so
+  /// browser builds must pass [userInitiated] when opening the chooser.
+  Future<void> scanAndConnect({bool userInitiated = false}) async {
     if (_disposed) return;
+    if (kIsWeb && !userInitiated && _lastDevice == null) {
+      _setState('Tap Bluetooth');
+      return;
+    }
     if (_connecting) return; // prevent concurrent connection attempts
     _connecting = true;
     _autoReconnect = true;
@@ -228,20 +238,36 @@ class BleService {
       final cached = _lastDevice;
       if (cached != null) {
         if (await _connectToDevice(cached)) return;
+        if (kIsWeb && !userInitiated) {
+          _setState('Disconnected');
+          _scheduleReconnect();
+          return;
+        }
       }
 
-      _setState('Scanning…');
+      if (kIsWeb && !userInitiated) {
+        _setState('Tap Bluetooth');
+        return;
+      }
+
+      _setState(kIsWeb ? 'Select SleepyDrive…' : 'Scanning…');
 
       BluetoothDevice? found;
       try {
-        found = await _scanForSleepyDrive(_ScanMode.serviceOrName);
-        found ??= await _scanForSleepyDrive(_ScanMode.keyword);
+        if (kIsWeb) {
+          found = await _scanForSleepyDrive(_ScanMode.webChooser);
+        } else {
+          found = await _scanForSleepyDrive(_ScanMode.serviceOrName);
+          found ??= await _scanForSleepyDrive(_ScanMode.keyword);
+        }
       } catch (e) {
         debugPrint('[BLE] scan error: $e');
-        _setState('Scan failed');
+        _setState(kIsWeb ? 'Selection canceled' : 'Scan failed');
         await Future.delayed(const Duration(seconds: 2));
         _setState('Disconnected');
-        _scheduleReconnect();
+        if (!kIsWeb) {
+          _scheduleReconnect();
+        }
         return;
       }
 
@@ -262,16 +288,20 @@ class BleService {
       }
 
       if (found == null) {
-        _setState('Not found');
+        _setState(kIsWeb ? 'Not selected' : 'Not found');
         await Future.delayed(const Duration(seconds: 2));
         _setState('Disconnected');
-        _scheduleReconnect();
+        if (!kIsWeb) {
+          _scheduleReconnect();
+        }
         return;
       }
 
       if (!await _connectToDevice(found)) {
         _setState('Disconnected');
-        _scheduleReconnect();
+        if (!kIsWeb) {
+          _scheduleReconnect();
+        }
       }
     } finally {
       _connecting = false;
@@ -295,7 +325,6 @@ class BleService {
         await found.connect(timeout: const Duration(seconds: 12), mtu: null);
       }
       _device = found;
-      _lastDevice = found;
 
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
         try {
@@ -365,6 +394,7 @@ class BleService {
           }
 
           _reconnectAttempt = 0;
+          _lastDevice = found;
           _setState('Connected');
           debugPrint('[BLE] subscribed to alert characteristic');
           return true;
@@ -427,6 +457,7 @@ class BleService {
   /// explicitly disconnected by the user.
   void _scheduleReconnect() {
     if (!_autoReconnect || _disposed) return;
+    if (kIsWeb && _lastDevice == null) return;
     _reconnectTimer?.cancel();
     _reconnectAttempt = (_reconnectAttempt + 1).clamp(1, 5).toInt();
     final delay = Duration(seconds: 3 * (1 << (_reconnectAttempt - 1)));

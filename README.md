@@ -39,3 +39,6 @@ Then run the python file using:
 Enter the IP in the python file
 
 Now the you run the jetson with: `flutter run --dart-define=JETSON_WS_URL=ws://<YOUR_IP>/ws/alerts?replay=0`
+
+
+flutter run --dart-define=JETSON_WS_URL=wss://sleepydrive.onrender.com/ws/alerts?replay=0
