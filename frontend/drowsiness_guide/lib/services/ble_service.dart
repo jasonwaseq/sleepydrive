@@ -54,6 +54,7 @@ class BleService {
   // Set false only during explicit disconnect().
   bool _autoReconnect = false;
   bool _disposed = false;
+  bool _connecting = false; // guard against concurrent scanAndConnect() calls
   Timer? _reconnectTimer;
 
   void _setState(String s) {
@@ -154,143 +155,150 @@ class BleService {
   /// user-initiated retry; the internal reconnect path always leaves it true.
   Future<void> scanAndConnect() async {
     if (_disposed) return;
+    if (_connecting) return; // prevent concurrent connection attempts
+    _connecting = true;
     _autoReconnect = true;
     _reconnectTimer?.cancel();
 
-    if (!await FlutterBluePlus.isSupported) {
-      _setState('BLE unsupported');
-      return;
-    }
+    try {
+      if (!await FlutterBluePlus.isSupported) {
+        _setState('BLE unsupported');
+        return;
+      }
 
-    if (!await _ensureBlePermissions()) {
-      _setState('Bluetooth permission denied');
-      await Future.delayed(const Duration(seconds: 2));
-      _setState('Disconnected');
-      return;
-    }
-
-    // Wait for Bluetooth adapter to be on (gives iOS time to process permission)
-    if (!kIsWeb) {
-      _setState('Waiting for Bluetooth…');
-      try {
-        final initialState = await FlutterBluePlus.adapterState.first.timeout(
-          const Duration(seconds: 5),
-        );
-
-        if (initialState == BluetoothAdapterState.unauthorized) {
-          _setState('Bluetooth unauthorized');
-          return;
-        }
-
-        if (initialState != BluetoothAdapterState.on) {
-          await FlutterBluePlus.adapterState
-              .where((s) => s == BluetoothAdapterState.on)
-              .first
-              .timeout(const Duration(seconds: 5));
-        }
-      } catch (_) {
-        _setState('Bluetooth is off');
-        await Future.delayed(const Duration(seconds: 1));
+      if (!await _ensureBlePermissions()) {
+        _setState('Bluetooth permission denied');
+        await Future.delayed(const Duration(seconds: 2));
         _setState('Disconnected');
         return;
       }
-    }
 
-    _setState('Scanning…');
-
-    BluetoothDevice? found;
-    try {
-      found = await _scanForSleepyDrive(_ScanMode.serviceOrName);
-      found ??= await _scanForSleepyDrive(_ScanMode.keyword);
-    } catch (e) {
-      debugPrint('[BLE] scan error: $e');
-      _setState('Scan failed');
-      await Future.delayed(const Duration(seconds: 2));
-      _setState('Disconnected');
-      _scheduleReconnect();
-      return;
-    }
-
-    if (found == null) {
-      try {
-        final systemDevices = await FlutterBluePlus.systemDevices([
-          Guid(_serviceUuid),
-        ]);
-        for (final device in systemDevices) {
-          if (_matchesExpectedName(device.platformName)) {
-            found = device;
-            break;
+      // Wait for Bluetooth adapter to be on (gives iOS time to process permission)
+      if (!kIsWeb) {
+        _setState('Waiting for Bluetooth…');
+        try {
+          final initialState = await FlutterBluePlus.adapterState.first.timeout(
+            const Duration(seconds: 5),
+          );
+          if (initialState == BluetoothAdapterState.unauthorized) {
+            _setState('Bluetooth unauthorized');
+            return;
           }
-        }
-      } catch (_) {
-        // Ignore system-device lookup failures and fall through to "Not found".
-      }
-    }
-
-    if (found == null) {
-      _setState('Not found');
-      await Future.delayed(const Duration(seconds: 2));
-      _setState('Disconnected');
-      _scheduleReconnect();
-      return;
-    }
-
-    _setState('Connecting…');
-
-    try {
-      await found.connect(timeout: const Duration(seconds: 10));
-      _device = found;
-
-      // Listen for disconnection — trigger auto-reconnect if we own the session.
-      _connSub?.cancel();
-      _connSub = found.connectionState.listen((state) {
-        if (state == BluetoothConnectionState.disconnected) {
-          _notifySub?.cancel();
-          _notifySub = null;
+          if (initialState != BluetoothAdapterState.on) {
+            await FlutterBluePlus.adapterState
+                .where((s) => s == BluetoothAdapterState.on)
+                .first
+                .timeout(const Duration(seconds: 5));
+          }
+        } catch (_) {
+          _setState('Bluetooth is off');
+          await Future.delayed(const Duration(seconds: 1));
           _setState('Disconnected');
-          _scheduleReconnect();
+          return;
         }
-      });
+      }
 
-      _setState('Connected');
+      _setState('Scanning…');
 
-      // Discover services and subscribe to the alert characteristic.
-      final services = await found.discoverServices();
-      bool subscribed = false;
-      for (final svc in services) {
-        if (svc.uuid.toString().toLowerCase() == _serviceUuid) {
-          for (final ch in svc.characteristics) {
-            if (ch.uuid.toString().toLowerCase() == _charUuid) {
-              if (!ch.properties.notify) {
-                debugPrint('[BLE] characteristic found but notify not supported');
-                _setState('Connected (notify unsupported)');
+      BluetoothDevice? found;
+      try {
+        found = await _scanForSleepyDrive(_ScanMode.serviceOrName);
+        found ??= await _scanForSleepyDrive(_ScanMode.keyword);
+      } catch (e) {
+        debugPrint('[BLE] scan error: $e');
+        _setState('Scan failed');
+        await Future.delayed(const Duration(seconds: 2));
+        _setState('Disconnected');
+        _scheduleReconnect();
+        return;
+      }
+
+      if (found == null) {
+        try {
+          final systemDevices = await FlutterBluePlus.systemDevices([
+            Guid(_serviceUuid),
+          ]);
+          for (final device in systemDevices) {
+            if (_matchesExpectedName(device.platformName)) {
+              found = device;
+              break;
+            }
+          }
+        } catch (_) {
+          // Ignore system-device lookup failures and fall through to "Not found".
+        }
+      }
+
+      if (found == null) {
+        _setState('Not found');
+        await Future.delayed(const Duration(seconds: 2));
+        _setState('Disconnected');
+        _scheduleReconnect();
+        return;
+      }
+
+      _setState('Connecting…');
+
+      try {
+        await found.connect(timeout: const Duration(seconds: 10));
+        _device = found;
+
+        _setState('Connected');
+
+        // React to disconnection on this specific device object.
+        _connSub?.cancel();
+        _connSub = found.connectionState.listen((state) {
+          if (state == BluetoothConnectionState.disconnected) {
+            _notifySub?.cancel();
+            _notifySub = null;
+            _setState('Disconnected');
+            _scheduleReconnect();
+          }
+        });
+
+        // Timeout so a mid-connection Jetson drop doesn't hang forever.
+        final services = await found
+            .discoverServices()
+            .timeout(const Duration(seconds: 10));
+        debugPrint('[BLE] discovered ${services.length} services');
+        for (final svc in services) {
+          debugPrint('[BLE]   service: ${svc.uuid}');
+        }
+        bool subscribed = false;
+        for (final svc in services) {
+          if (svc.uuid.toString().toLowerCase() == _serviceUuid) {
+            for (final ch in svc.characteristics) {
+              debugPrint('[BLE]     char: ${ch.uuid} notify=${ch.properties.notify}');
+              if (ch.uuid.toString().toLowerCase() == _charUuid) {
+                if (!ch.properties.notify) {
+                  debugPrint('[BLE] characteristic found but notify not supported');
+                  _setState('Connected (notify unsupported)');
+                  return;
+                }
+                await _notifySub?.cancel();
+                _notifySub = ch.onValueReceived.listen(_onData);
+                await ch.setNotifyValue(true);
+                subscribed = true;
+                _setState('Connected');
+                debugPrint('[BLE] subscribed to alert characteristic');
                 return;
               }
-              await ch.setNotifyValue(true);
-              await _notifySub?.cancel();
-              _notifySub = ch.lastValueStream.listen(_onData);
-              try {
-                await ch.read();
-              } catch (e) {
-                debugPrint('[BLE] initial characteristic read failed: $e');
-              }
-              subscribed = true;
-              debugPrint('[BLE] subscribed to alert characteristic');
-              return;
             }
           }
         }
+        if (!subscribed) {
+          debugPrint('[BLE] connected but alert service/characteristic not found');
+          _setState('Connected (no alert service)');
+        }
+      } catch (e) {
+        debugPrint('[BLE] connection error: $e');
+        _setState('Connection failed');
+        await Future.delayed(const Duration(seconds: 2));
+        _setState('Disconnected');
+        _scheduleReconnect();
       }
-      if (!subscribed) {
-        debugPrint('[BLE] connected but alert service/characteristic not found');
-        _setState('Connected (no alert service)');
-      }
-    } catch (e) {
-      debugPrint('[BLE] connection error: $e');
-      _setState('Connection failed');
-      await Future.delayed(const Duration(seconds: 2));
-      _setState('Disconnected');
-      _scheduleReconnect();
+    } finally {
+      _connecting = false;
     }
   }
 
@@ -312,11 +320,9 @@ class BleService {
       final text = utf8.decode(raw);
       // Format: "<level>|<message>"
       final pipe = text.indexOf('|');
-      if (pipe < 0) {
-        debugPrint('[BLE] malformed packet (no pipe): $text');
-        return;
-      }
+      if (pipe < 0) return; // keep-alive ping or malformed — ignore silently
       final level = int.tryParse(text.substring(0, pipe)) ?? 0;
+      if (level < 0) return; // level == -1 is a Jetson keep-alive heartbeat
       final message = text.substring(pipe + 1);
       _alertCtrl.add(BleAlert(level: level, message: message));
     } catch (e) {

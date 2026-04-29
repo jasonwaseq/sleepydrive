@@ -143,10 +143,17 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      final isConnected =
+      final wsConnected =
           _wsIsConnected(_jetsonWsState) || _wsIsBusy(_jetsonWsState);
-      if (!isConnected) {
+      if (!wsConnected) {
         _jetsonWs.connect();
+      }
+      // OS kills BLE in background on many Android devices — reconnect on resume.
+      if (_bleState != 'Connected' &&
+          _bleState != 'Scanning…' &&
+          _bleState != 'Connecting…' &&
+          _bleState != 'Waiting for Bluetooth…') {
+        unawaited(_ble.scanAndConnect());
       }
     }
   }
