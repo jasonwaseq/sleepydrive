@@ -14,6 +14,8 @@ class FleetOperatorDashboard extends StatefulWidget {
 }
 
 class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
+  static const int _fatigueRiskStep = 10;
+
   static const String _jetsonWsUrl = String.fromEnvironment(
     'JETSON_WS_URL',
     defaultValue: 'ws://localhost:8080/ws/alerts?replay=0',
@@ -23,6 +25,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
     uri: Uri.parse(_jetsonWsUrl),
   );
   final UserRoleService _userRoleService = UserRoleService();
+  final ValueNotifier<int> _liveAlertsVersion = ValueNotifier<int>(0);
 
   StreamSubscription<JetsonAlert>? _alertSub;
   StreamSubscription<JetsonPresence>? _presenceSub;
@@ -38,6 +41,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
   bool _isRefreshingFleet = false;
 
   final Map<String, _DriverData> _driversByUid = {};
+  final Map<String, List<FleetAlert>> _liveAlertsByUid = {};
 
   @override
   void initState() {
@@ -67,6 +71,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
     _stateSub?.cancel();
     _fleetPollTimer?.cancel();
     _fleetRefreshDebounce?.cancel();
+    _liveAlertsVersion.dispose();
     _jetsonWs.dispose();
     super.dispose();
   }
@@ -84,8 +89,10 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
       }
 
       for (final entry in entries) {
-        final updatedRisk =
-            alert.fatigueRiskPercent ?? _riskFromAlertLevel(alert.level);
+        final nextRisk =
+            alert.fatigueRiskPercent ?? entry.value.risk + _fatigueRiskStep;
+        final updatedRisk = nextRisk.clamp(0, 100).toInt();
+        _addLiveAlert(entry.key, alert);
         _driversByUid[entry.key] = entry.value.copyWith(
           risk: updatedRisk,
           status: _statusFromRiskValue(updatedRisk),
@@ -98,6 +105,27 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
       }
     });
     _scheduleFleetRefresh();
+  }
+
+  void _addLiveAlert(String driverUid, JetsonAlert alert) {
+    final liveAlerts = _liveAlertsByUid.putIfAbsent(
+      driverUid,
+      () => <FleetAlert>[],
+    );
+    liveAlerts.insert(
+      0,
+      FleetAlert(
+        level: alert.level,
+        message: alert.message,
+        timestamp: alert.timestamp,
+        metadata: alert.metadata,
+        fatigueRiskPercent: alert.fatigueRiskPercent,
+      ),
+    );
+    if (liveAlerts.length > 50) {
+      liveAlerts.removeRange(50, liveAlerts.length);
+    }
+    _liveAlertsVersion.value++;
   }
 
   void _handlePresence(JetsonPresence presence) {
@@ -274,6 +302,11 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
             );
           }),
         );
+      final beforePrune = _liveAlertsByUid.length;
+      _liveAlertsByUid.removeWhere((uid, _) => !_driversByUid.containsKey(uid));
+      if (_liveAlertsByUid.length != beforePrune) {
+        _liveAlertsVersion.value++;
+      }
     });
   }
 
@@ -315,7 +348,12 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
     try {
       await _userRoleService.removeDriver(driver.uid);
       if (!mounted) return;
-      setState(() => _driversByUid.remove(driver.uid));
+      setState(() {
+        _driversByUid.remove(driver.uid);
+        if (_liveAlertsByUid.remove(driver.uid) != null) {
+          _liveAlertsVersion.value++;
+        }
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${driver.displayName} removed from fleet')),
       );
@@ -417,119 +455,158 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
       isScrollControlled: true,
       showDragHandle: true,
       builder: (context) {
-        final currentDriver = _driversByUid[driver.uid] ?? driver;
-        return FutureBuilder<List<FleetAlert>>(
-          future: _userRoleService.fetchDriverAlerts(driver.uid),
-          builder: (context, snapshot) {
-            final alerts = snapshot.data ?? const <FleetAlert>[];
+        final alertsFuture = _userRoleService.fetchDriverAlerts(driver.uid);
+        return ValueListenableBuilder<int>(
+          valueListenable: _liveAlertsVersion,
+          builder: (context, _, child) {
+            final currentDriver = _driversByUid[driver.uid] ?? driver;
+            return FutureBuilder<List<FleetAlert>>(
+              future: alertsFuture,
+              builder: (context, snapshot) {
+                final alerts = _combinedDriverAlerts(
+                  driver.uid,
+                  snapshot.data ?? const <FleetAlert>[],
+                );
 
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                return SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.person_rounded),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                currentDriver.displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              if (currentDriver.deviceId != null)
-                                Text(
-                                  'Device: ${currentDriver.deviceId}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.grey.shade600,
-                                    fontSize: 12,
+                        Row(
+                          children: [
+                            const Icon(Icons.person_rounded),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    currentDriver.displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(fontWeight: FontWeight.w700),
                                   ),
-                                ),
-                            ],
-                          ),
+                                  if (currentDriver.deviceId != null)
+                                    Text(
+                                      'Device: ${currentDriver.deviceId}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
+                        if (currentDriver.email != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            currentDriver.email!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        if (snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            alerts.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 32),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else if (snapshot.hasError && alerts.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24),
+                            child: Text(
+                              snapshot.error.toString(),
+                              style: const TextStyle(color: Color(0xFFFF6B6B)),
+                            ),
+                          )
+                        else if (alerts.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24),
+                            child: Text('No alerts recorded for this driver.'),
+                          )
+                        else
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight:
+                                  MediaQuery.of(context).size.height * 0.48,
+                            ),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: alerts.length,
+                              separatorBuilder: (context, index) =>
+                                  const Divider(),
+                              itemBuilder: (context, index) {
+                                final alert = alerts[index];
+                                final color = _alertLevelColor(alert.level);
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(
+                                    Icons.warning_rounded,
+                                    color: color,
+                                  ),
+                                  title: Text(alert.message),
+                                  subtitle: Text(
+                                    _formatAlertTime(alert.timestamp),
+                                  ),
+                                  trailing: Text(
+                                    _alertLevelLabel(alert.level),
+                                    style: TextStyle(
+                                      color: color,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                       ],
                     ),
-                    if (currentDriver.email != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        currentDriver.email!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    if (snapshot.connectionState == ConnectionState.waiting)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 32),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (snapshot.hasError)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 24),
-                        child: Text(
-                          snapshot.error.toString(),
-                          style: const TextStyle(color: Color(0xFFFF6B6B)),
-                        ),
-                      )
-                    else if (alerts.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 24),
-                        child: Text('No alerts recorded for this driver.'),
-                      )
-                    else
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.48,
-                        ),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: alerts.length,
-                          separatorBuilder: (_, __) => const Divider(),
-                          itemBuilder: (context, index) {
-                            final alert = alerts[index];
-                            final color = _alertLevelColor(alert.level);
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: Icon(
-                                Icons.warning_rounded,
-                                color: color,
-                              ),
-                              title: Text(alert.message),
-                              subtitle: Text(_formatAlertTime(alert.timestamp)),
-                              trailing: Text(
-                                _alertLevelLabel(alert.level),
-                                style: TextStyle(
-                                  color: color,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             );
           },
         );
       },
     );
+  }
+
+  List<FleetAlert> _combinedDriverAlerts(
+    String driverUid,
+    List<FleetAlert> serverAlerts,
+  ) {
+    final liveAlerts = _liveAlertsByUid[driverUid] ?? const <FleetAlert>[];
+    if (liveAlerts.isEmpty) return serverAlerts;
+
+    final seen = <String>{};
+    final merged = <FleetAlert>[];
+    for (final alert in [...liveAlerts, ...serverAlerts]) {
+      final key = [
+        alert.level,
+        alert.message,
+        alert.timestamp?.millisecondsSinceEpoch ?? 0,
+      ].join('|');
+      if (seen.add(key)) {
+        merged.add(alert);
+      }
+    }
+    return merged;
   }
 }
 
@@ -595,7 +672,7 @@ class _DriverData {
       uid: uid ?? this.uid,
       displayName: displayName ?? this.displayName,
       email: email ?? this.email,
-      deviceId: this.deviceId,
+      deviceId: deviceId,
       risk: risk ?? this.risk,
       status: status ?? this.status,
       isOnline: isOnline ?? this.isOnline,
@@ -674,12 +751,6 @@ String _statusFromRiskValue(int risk) {
   if (risk >= 30) return 'Moderate fatigue';
   if (risk >= 10) return 'Low fatigue';
   return 'No data';
-}
-
-int _riskFromAlertLevel(int level) {
-  if (level <= 0) return 0;
-  if (level == 1) return 50;
-  return 90;
 }
 
 Color _riskColor(int risk, {required bool hasFatigueData}) {

@@ -122,6 +122,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
         message: alert.message,
         source: 'Jetson WS',
         alertTimestamp: alert.timestamp,
+        fatigueRiskPercent: alert.fatigueRiskPercent,
       );
     });
     _jetsonPresenceSub = _jetsonWs.presence.listen(_handleJetsonPresence);
@@ -169,11 +170,13 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     required String message,
     required String source,
     DateTime? alertTimestamp,
+    int? fatigueRiskPercent,
   }) {
     if (!mounted) return;
     setState(() {
       _latestAlertLevel = levelLabel;
-      _fatigueRisk = (_fatigueRisk + _fatigueRiskStep).clamp(0, 100);
+      final nextRisk = fatigueRiskPercent ?? _fatigueRisk + _fatigueRiskStep;
+      _fatigueRisk = nextRisk.clamp(0, 100).toInt();
       _alerts.insert(
         0,
         _DashboardAlert(
@@ -203,6 +206,8 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
       final nextState = presence.online ? 'Online' : 'Offline';
       if (_jetsonDeviceState != nextState && nextState == 'Offline') {
         _fatigueRisk = _fatigueRiskResetValue;
+      } else if (presence.online && presence.fatigueRiskPercent != null) {
+        _fatigueRisk = presence.fatigueRiskPercent!.clamp(0, 100).toInt();
       }
       _jetsonDeviceState = nextState;
     });
