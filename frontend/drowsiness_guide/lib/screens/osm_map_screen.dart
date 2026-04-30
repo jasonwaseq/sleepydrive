@@ -135,14 +135,18 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
       final durationS = (r0['duration'] as num).toDouble();
 
       final geometry = r0['geometry'] as Map<String, dynamic>;
-      final coords = (geometry['coordinates'] as List<dynamic>)
-          .cast<List<dynamic>>();
+      final coords = geometry['coordinates'] as List<dynamic>;
 
       final pts = coords
+          .whereType<List>()
           .map(
             (c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
           )
           .toList();
+      if (pts.isEmpty) {
+        setState(() => _status = 'Driving route returned no geometry.');
+        return;
+      }
 
       final selectedStop = _stopsWithRoutes.isEmpty
           ? null
@@ -211,21 +215,46 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
     }
 
     final data = jsonDecode(res.body);
-    if (data is Map<String, dynamic>) return data;
-    if (data is Map) return Map<String, dynamic>.from(data);
-    throw Exception('invalid response');
+    final body = data is Map<String, dynamic>
+        ? data
+        : data is Map
+        ? Map<String, dynamic>.from(data)
+        : null;
+    if (body == null) {
+      throw Exception('invalid response');
+    }
+    if (uri.host == 'maps.googleapis.com') {
+      return _googleDirectionsToOsrm(body);
+    }
+    return body;
   }
 
   List<Uri> _routeRequestUris(LatLng from, LatLng to) {
-    return [
+    final requests = <Uri>[
       Uri.parse('$_routingBackendBaseUrl/routing/driving').replace(
         queryParameters: {
           'from_lat': from.latitude.toString(),
           'from_lon': from.longitude.toString(),
           'to_lat': to.latitude.toString(),
           'to_lon': to.longitude.toString(),
+          if (googlePlacesApiKey.isNotEmpty &&
+              googlePlacesApiKey != 'YOUR_GOOGLE_PLACES_API_KEY')
+            'google_api_key': googlePlacesApiKey,
         },
       ),
+    ];
+    if (googlePlacesApiKey.isNotEmpty &&
+        googlePlacesApiKey != 'YOUR_GOOGLE_PLACES_API_KEY') {
+      requests.add(
+        Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
+          'origin': '${from.latitude},${from.longitude}',
+          'destination': '${to.latitude},${to.longitude}',
+          'mode': 'driving',
+          'key': googlePlacesApiKey,
+        }),
+      );
+    }
+    requests.addAll([
       Uri.https(
         'routing.openstreetmap.de',
         '/routed-car/route/v1/driving/'
@@ -238,7 +267,94 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
             '${from.longitude},${from.latitude};${to.longitude},${to.latitude}',
         {'overview': 'full', 'geometries': 'geojson'},
       ),
-    ];
+    ]);
+    return requests;
+  }
+
+  Map<String, dynamic> _googleDirectionsToOsrm(Map<String, dynamic> data) {
+    final status = data['status']?.toString() ?? 'UNKNOWN';
+    if (status != 'OK') {
+      throw Exception('Google Directions error $status');
+    }
+
+    final routes = data['routes'];
+    if (routes is! List || routes.isEmpty) {
+      throw Exception('Google Directions returned no routes');
+    }
+
+    final route = routes.first;
+    if (route is! Map) {
+      throw Exception('Google Directions route was invalid');
+    }
+
+    var distance = 0.0;
+    var duration = 0.0;
+    final legs = route['legs'];
+    if (legs is List) {
+      for (final leg in legs) {
+        if (leg is! Map) continue;
+        final distanceValue = leg['distance'] is Map
+            ? (leg['distance']['value'] as num?)?.toDouble()
+            : null;
+        final durationValue = leg['duration'] is Map
+            ? (leg['duration']['value'] as num?)?.toDouble()
+            : null;
+        distance += distanceValue ?? 0;
+        duration += durationValue ?? 0;
+      }
+    }
+
+    final overview = route['overview_polyline'];
+    final points = overview is Map ? overview['points']?.toString() : null;
+    if (points == null || points.isEmpty) {
+      throw Exception('Google Directions returned no geometry');
+    }
+
+    return {
+      'code': 'Ok',
+      'routes': [
+        {
+          'distance': distance,
+          'duration': duration,
+          'geometry': {
+            'type': 'LineString',
+            'coordinates': _decodeGooglePolyline(points),
+          },
+        },
+      ],
+    };
+  }
+
+  List<List<double>> _decodeGooglePolyline(String encoded) {
+    final coords = <List<double>>[];
+    var index = 0;
+    var lat = 0;
+    var lng = 0;
+
+    while (index < encoded.length) {
+      var result = 0;
+      var shift = 0;
+      int value;
+      do {
+        value = encoded.codeUnitAt(index++) - 63;
+        result |= (value & 0x1f) << shift;
+        shift += 5;
+      } while (value >= 0x20);
+      lat += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
+
+      result = 0;
+      shift = 0;
+      do {
+        value = encoded.codeUnitAt(index++) - 63;
+        result |= (value & 0x1f) << shift;
+        shift += 5;
+      } while (value >= 0x20);
+      lng += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
+
+      coords.add([lng / 1e5, lat / 1e5]);
+    }
+
+    return coords;
   }
 
   Future<void> _loadStops() async {

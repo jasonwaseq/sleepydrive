@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import secrets
 import sys
 import urllib.error
@@ -172,6 +173,86 @@ def _fetch_json_url(url: str, timeout_seconds: float = 12.0) -> dict[str, Any]:
     return data
 
 
+def _decode_google_polyline(polyline: str) -> list[list[float]]:
+    coords: list[list[float]] = []
+    index = 0
+    lat = 0
+    lng = 0
+
+    while index < len(polyline):
+        result = 0
+        shift = 0
+        while True:
+            value = ord(polyline[index]) - 63
+            index += 1
+            result |= (value & 0x1F) << shift
+            shift += 5
+            if value < 0x20:
+                break
+        lat += ~(result >> 1) if result & 1 else result >> 1
+
+        result = 0
+        shift = 0
+        while True:
+            value = ord(polyline[index]) - 63
+            index += 1
+            result |= (value & 0x1F) << shift
+            shift += 5
+            if value < 0x20:
+                break
+        lng += ~(result >> 1) if result & 1 else result >> 1
+
+        coords.append([lng / 1e5, lat / 1e5])
+
+    return coords
+
+
+def _google_directions_to_osrm(data: dict[str, Any]) -> dict[str, Any]:
+    status = str(data.get("status") or "UNKNOWN")
+    if status != "OK":
+        detail = str(data.get("error_message") or status)
+        raise HTTPException(status_code=502, detail=f"Google Directions error {detail}")
+
+    routes = data.get("routes")
+    if not isinstance(routes, list) or not routes:
+        raise HTTPException(status_code=502, detail="Google Directions returned no routes")
+
+    route = routes[0]
+    if not isinstance(route, dict):
+        raise HTTPException(status_code=502, detail="Google Directions route was invalid")
+
+    legs = route.get("legs")
+    if not isinstance(legs, list) or not legs:
+        raise HTTPException(status_code=502, detail="Google Directions returned no legs")
+
+    distance = 0.0
+    duration = 0.0
+    for leg in legs:
+        if not isinstance(leg, dict):
+            continue
+        distance += float((leg.get("distance") or {}).get("value") or 0)
+        duration += float((leg.get("duration") or {}).get("value") or 0)
+
+    overview = route.get("overview_polyline")
+    points = overview.get("points") if isinstance(overview, dict) else None
+    if not isinstance(points, str) or not points:
+        raise HTTPException(status_code=502, detail="Google Directions returned no route geometry")
+
+    return {
+        "code": "Ok",
+        "routes": [
+            {
+                "distance": distance,
+                "duration": duration,
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": _decode_google_polyline(points),
+                },
+            },
+        ],
+    }
+
+
 def _risk_from_alert_level(level: Any) -> int | None:
     try:
         parsed = int(level)
@@ -287,6 +368,7 @@ def create_app() -> FastAPI:
         from_lon: float = Query(..., ge=-180, le=180),
         to_lat: float = Query(..., ge=-90, le=90),
         to_lon: float = Query(..., ge=-180, le=180),
+        google_api_key: str | None = Query(None, max_length=256),
     ):
         query = urllib.parse.urlencode(
             {
@@ -305,6 +387,31 @@ def create_app() -> FastAPI:
                 return await asyncio.to_thread(_fetch_json_url, url)
             except HTTPException as exc:
                 errors.append(str(exc.detail))
+
+        google_key = (
+            google_api_key
+            or os.getenv("GOOGLE_DIRECTIONS_API_KEY")
+            or os.getenv("GOOGLE_MAPS_API_KEY")
+            or os.getenv("GOOGLE_PLACES_API_KEY")
+        )
+        if google_key:
+            google_query = urllib.parse.urlencode(
+                {
+                    "origin": f"{from_lat},{from_lon}",
+                    "destination": f"{to_lat},{to_lon}",
+                    "mode": "driving",
+                    "key": google_key,
+                },
+            )
+            try:
+                data = await asyncio.to_thread(
+                    _fetch_json_url,
+                    f"https://maps.googleapis.com/maps/api/directions/json?{google_query}",
+                )
+                return _google_directions_to_osrm(data)
+            except HTTPException as exc:
+                errors.append(str(exc.detail))
+
         raise HTTPException(status_code=502, detail=" | ".join(errors))
 
     async def _generate_invite_code(conn) -> str:
