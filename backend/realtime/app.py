@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import secrets
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -128,6 +132,46 @@ def _metadata_percent(metadata: Any) -> int | None:
     return None
 
 
+def _fetch_json_url(url: str, timeout_seconds: float = 12.0) -> dict[str, Any]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "SleepyDrive/1.0 routing-proxy",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            status = getattr(response, "status", response.getcode())
+            body = response.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        raise HTTPException(
+            status_code=502,
+            detail=f"Routing provider returned HTTP {exc.code}: {detail}",
+        ) from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Routing provider unavailable: {exc}",
+        ) from exc
+
+    if status != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Routing provider returned HTTP {status}",
+        )
+
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=502, detail="Routing provider returned invalid JSON") from exc
+
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="Routing provider response was invalid")
+    return data
+
+
 def _risk_from_alert_level(level: Any) -> int | None:
     try:
         parsed = int(level)
@@ -236,6 +280,32 @@ def create_app() -> FastAPI:
             authorization=authorization,
             project_id=settings.firebase_project_id,
         )
+
+    @app.get("/routing/driving")
+    async def driving_route(
+        from_lat: float = Query(..., ge=-90, le=90),
+        from_lon: float = Query(..., ge=-180, le=180),
+        to_lat: float = Query(..., ge=-90, le=90),
+        to_lon: float = Query(..., ge=-180, le=180),
+    ):
+        query = urllib.parse.urlencode(
+            {
+                "overview": "full",
+                "geometries": "geojson",
+            },
+        )
+        route_path = f"{from_lon},{from_lat};{to_lon},{to_lat}?{query}"
+        urls = (
+            f"https://router.project-osrm.org/route/v1/driving/{route_path}",
+            f"https://routing.openstreetmap.de/routed-car/route/v1/driving/{route_path}",
+        )
+        errors = []
+        for url in urls:
+            try:
+                return await asyncio.to_thread(_fetch_json_url, url)
+            except HTTPException as exc:
+                errors.append(str(exc.detail))
+        raise HTTPException(status_code=502, detail=" | ".join(errors))
 
     async def _generate_invite_code(conn) -> str:
         alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

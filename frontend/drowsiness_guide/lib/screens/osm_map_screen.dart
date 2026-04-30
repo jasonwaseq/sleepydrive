@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -27,6 +28,10 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
   static const Color _brandBlue = Color(0xFF5E8AD6);
   static const Color _bgTop = Color(0xFFCED8E4);
   static const Color _bgBottom = Color(0xFF7E97B9);
+  static const String _backendBaseUrl = String.fromEnvironment(
+    'BACKEND_BASE_URL',
+    defaultValue: 'https://sleepydrive.onrender.com',
+  );
 
   Position? _pos;
   LatLng? _dest;
@@ -36,11 +41,16 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
   bool _showOtherStops = false;
   String? _stopsError;
   final osm.OSMPlacesService _places = osm.OSMPlacesService();
-  final gplaces.PlacesService _googlePlaces =
-      gplaces.PlacesService(apiKey: googlePlacesApiKey);
+  final gplaces.PlacesService _googlePlaces = gplaces.PlacesService(
+    apiKey: googlePlacesApiKey,
+  );
 
   String _status = 'Loading location…';
   String _routeInfo = '';
+
+  String get _routingBackendBaseUrl => _backendBaseUrl.endsWith('/')
+      ? _backendBaseUrl.substring(0, _backendBaseUrl.length - 1)
+      : _backendBaseUrl;
 
   @override
   void initState() {
@@ -111,24 +121,12 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
       _routeInfo = '';
     });
 
-    final url = Uri.parse(
-      'https://router.project-osrm.org/route/v1/driving/'
-      '${from.longitude},${from.latitude};${to.longitude},${to.latitude}'
-      '?overview=full&geometries=geojson',
-    );
-
     try {
-      final res = await http.get(url).timeout(const Duration(seconds: 12));
-      if (res.statusCode != 200) {
-        setState(() => _status = 'Route error: HTTP ${res.statusCode}');
-        return;
-      }
-
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final data = await _fetchDrivingRoute(from, to);
       final routes = data['routes'] as List<dynamic>?;
 
       if (routes == null || routes.isEmpty) {
-        setState(() => _status = 'No route found.');
+        setState(() => _status = 'No driving route found.');
         return;
       }
 
@@ -166,8 +164,81 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
 
       _fitToPoints([from, to, ...pts]);
     } catch (e) {
-      setState(() => _status = 'Routing failed: $e');
+      debugPrint('OSRM route API failed: $e');
+      setState(() {
+        _route = [];
+        _routeInfo = '';
+        _status =
+            'Driving route unavailable. Tap navigate to open Google Maps.';
+      });
+      _fitToPoints([from, to]);
     }
+  }
+
+  Future<Map<String, dynamic>> _fetchDrivingRoute(
+    LatLng from,
+    LatLng to,
+  ) async {
+    final completer = Completer<Map<String, dynamic>>();
+    final errors = <String>[];
+    var pending = 0;
+
+    for (final uri in _routeRequestUris(from, to)) {
+      pending++;
+      unawaited(() async {
+        try {
+          final data = await _fetchRouteUri(uri);
+          if (!completer.isCompleted) {
+            completer.complete(data);
+          }
+        } catch (e) {
+          errors.add('${uri.host}: $e');
+          pending--;
+          if (pending == 0 && !completer.isCompleted) {
+            completer.completeError(Exception(errors.join(' | ')));
+          }
+        }
+      }());
+    }
+
+    return completer.future;
+  }
+
+  Future<Map<String, dynamic>> _fetchRouteUri(Uri uri) async {
+    final res = await http.get(uri).timeout(const Duration(seconds: 12));
+    if (res.statusCode != 200) {
+      throw Exception('HTTP ${res.statusCode}');
+    }
+
+    final data = jsonDecode(res.body);
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('invalid response');
+  }
+
+  List<Uri> _routeRequestUris(LatLng from, LatLng to) {
+    return [
+      Uri.parse('$_routingBackendBaseUrl/routing/driving').replace(
+        queryParameters: {
+          'from_lat': from.latitude.toString(),
+          'from_lon': from.longitude.toString(),
+          'to_lat': to.latitude.toString(),
+          'to_lon': to.longitude.toString(),
+        },
+      ),
+      Uri.https(
+        'routing.openstreetmap.de',
+        '/routed-car/route/v1/driving/'
+            '${from.longitude},${from.latitude};${to.longitude},${to.latitude}',
+        {'overview': 'full', 'geometries': 'geojson'},
+      ),
+      Uri.https(
+        'router.project-osrm.org',
+        '/route/v1/driving/'
+            '${from.longitude},${from.latitude};${to.longitude},${to.latitude}',
+        {'overview': 'full', 'geometries': 'geojson'},
+      ),
+    ];
   }
 
   Future<void> _loadStops() async {
@@ -232,10 +303,8 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         if (data['code'] == 'Ok') {
-          final distances =
-              (data['distances'] as List).first as List<dynamic>;
-          final durations =
-              (data['durations'] as List).first as List<dynamic>;
+          final distances = (data['distances'] as List).first as List<dynamic>;
+          final durations = (data['durations'] as List).first as List<dynamic>;
 
           return List.generate(stops.length, (i) {
             final distMeters = (distances[i + 1] as num?)?.toDouble() ?? 0;
@@ -253,9 +322,7 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
     }
 
     return stops
-        .map(
-          (s) => _StopWithRoute(place: s, distanceMiles: 0, etaMinutes: 0),
-        )
+        .map((s) => _StopWithRoute(place: s, distanceMiles: 0, etaMinutes: 0))
         .toList();
   }
 
@@ -264,7 +331,11 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
     final lon = _pos!.longitude;
 
     try {
-      return await _places.fetchNearestGasStations(lat: lat, lon: lon, limit: 5);
+      return await _places.fetchNearestGasStations(
+        lat: lat,
+        lon: lon,
+        limit: 5,
+      );
     } catch (osmErr) {
       debugPrint('OSM stops failed: $osmErr');
       try {
@@ -335,7 +406,8 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
   }
 
   Widget _buildStopRow(_StopWithRoute stop) {
-    final isSelected = _dest != null &&
+    final isSelected =
+        _dest != null &&
         (stop.place.lat - _dest!.latitude).abs() < 0.0001 &&
         (stop.place.lon - _dest!.longitude).abs() < 0.0001;
 
@@ -602,7 +674,9 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                                         foregroundColor: Colors.white,
                                         padding: EdgeInsets.zero,
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                       ),
                                       onPressed: _openGoogleNav,
@@ -624,11 +698,14 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                                           horizontal: 10,
                                         ),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                       ),
                                       onPressed: () => setState(
-                                        () => _showOtherStops = !_showOtherStops,
+                                        () =>
+                                            _showOtherStops = !_showOtherStops,
                                       ),
                                       child: Text(
                                         _showOtherStops ? 'Close' : 'More',
@@ -673,7 +750,10 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
                         _loadingStops
                             ? 'Loading stops…'
                             : 'Stops: ${_stopsWithRoutes.length}',
-                        style: const TextStyle(fontSize: 11, color: Colors.black87),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black87,
+                        ),
                       ),
                     ),
                   ),
