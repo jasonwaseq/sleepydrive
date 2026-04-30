@@ -66,12 +66,35 @@ class BleService {
     return name.toLowerCase().contains(_deviceName.toLowerCase());
   }
 
-  bool _matchesDevice(ScanResult result) {
-    if (_matchesExpectedName(result.device.platformName)) {
-      return true;
+  bool _matchesExpectedService(ScanResult result) {
+    for (final uuid in result.advertisementData.serviceUuids) {
+      if (uuid.toLowerCase() == _serviceUuid) {
+        return true;
+      }
     }
+    return false;
+  }
+
+  int _deviceMatchScore(ScanResult result) {
+    final platformName = result.device.platformName;
     final advName = result.advertisementData.advName;
-    return advName.isNotEmpty && _matchesExpectedName(advName);
+    final platformExact = platformName.toLowerCase() == _deviceName.toLowerCase();
+    final advExact = advName.toLowerCase() == _deviceName.toLowerCase();
+    final platformMatch = _matchesExpectedName(platformName);
+    final advMatch = advName.isNotEmpty && _matchesExpectedName(advName);
+    final serviceMatch = _matchesExpectedService(result);
+
+    // Prioritize exact-name + service match to avoid unsupported devices.
+    if ((platformExact || advExact) && serviceMatch) return 6;
+    if (platformExact || advExact) return 5;
+    if (serviceMatch && (platformMatch || advMatch)) return 4;
+    if (serviceMatch) return 3;
+    if (platformMatch || advMatch) return 2;
+    return 0;
+  }
+
+  bool _matchesDevice(ScanResult result) {
+    return _deviceMatchScore(result) >= 3;
   }
 
   Future<bool> _ensureBlePermissions() async {
@@ -101,12 +124,15 @@ class BleService {
 
   Future<BluetoothDevice?> _scanForSleepyDrive(_ScanMode mode) async {
     BluetoothDevice? found;
+    int foundScore = 0;
     Object? scanError;
     final scanSub = FlutterBluePlus.onScanResults.listen(
       (results) {
         for (final r in results) {
-          if (_matchesDevice(r)) {
+          final score = _deviceMatchScore(r);
+          if (score > foundScore) {
             found = r.device;
+            foundScore = score;
           }
         }
       },
@@ -201,7 +227,8 @@ class BleService {
     BluetoothDevice? found;
     try {
       found = await _scanForSleepyDrive(_ScanMode.serviceOrName);
-      found ??= await _scanForSleepyDrive(_ScanMode.keyword);
+      // Keyword scan is intentionally skipped to avoid broad noisy results from
+      // unrelated nearby BLE devices that the app cannot communicate with.
     } catch (e) {
       debugPrint('[BLE] scan error: $e');
       _setState('Scan failed');
