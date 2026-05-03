@@ -10,6 +10,7 @@ class JetsonAlert {
   final DateTime timestamp;
   final Map<String, dynamic> metadata;
   final int? fatigueRiskPercent;
+  final bool? recovered;
 
   JetsonAlert({
     required this.deviceId,
@@ -18,6 +19,7 @@ class JetsonAlert {
     DateTime? timestamp,
     Map<String, dynamic>? metadata,
     this.fatigueRiskPercent,
+    this.recovered,
   }) : timestamp = timestamp ?? DateTime.now(),
        metadata = metadata ?? const <String, dynamic>{};
 
@@ -211,6 +213,7 @@ class JetsonWebSocketService {
             timestamp: ts,
             metadata: metadata,
             fatigueRiskPercent: _parseFatigueRisk(payload, metadata),
+            recovered: _parseRecoveryState(payload, metadata, msg, level),
           );
         }
       } catch (_) {
@@ -228,6 +231,12 @@ class JetsonWebSocketService {
         level: level,
         message: msg.isEmpty ? 'Alert' : msg,
         timestamp: DateTime.now(),
+        recovered: _parseRecoveryState(
+          const <String, dynamic>{},
+          const <String, dynamic>{},
+          msg,
+          level,
+        ),
       );
     }
 
@@ -236,6 +245,12 @@ class JetsonWebSocketService {
       level: 1,
       message: text,
       timestamp: DateTime.now(),
+      recovered: _parseRecoveryState(
+        const <String, dynamic>{},
+        const <String, dynamic>{},
+        text,
+        1,
+      ),
     );
   }
 
@@ -401,6 +416,96 @@ class JetsonWebSocketService {
       default:
         return 1;
     }
+  }
+
+  bool? _parseRecoveryState(
+    Map<String, dynamic> payload,
+    Map<String, dynamic> metadata,
+    String message,
+    int level,
+  ) {
+    const keys = [
+      'recovered',
+      'is_recovered',
+      'has_recovered',
+      'recovery',
+      'recovery_state',
+      'resolved',
+      'is_resolved',
+      'alert_active',
+      'active',
+      'in_alert_state',
+      'alert_state',
+      'state',
+      'event',
+      'event_type',
+      'status',
+    ];
+
+    for (final key in keys) {
+      final state = _parseRecoveryToken(payload[key] ?? metadata[key]);
+      if (state != null) return state;
+    }
+
+    final messageState = _parseRecoveryToken(message);
+    if (messageState != null) return messageState;
+
+    if (level <= 0) return true;
+    return null;
+  }
+
+  bool? _parseRecoveryToken(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is bool) return raw;
+
+    final text = raw.toString().trim().toLowerCase();
+    if (text.isEmpty) return null;
+
+    if (text == '1' ||
+        text == 'true' ||
+        text == 'yes' ||
+        text == 'recovered' ||
+        text == 'recovery' ||
+        text == 'resolved' ||
+        text == 'cleared' ||
+        text == 'clear' ||
+        text == 'normal' ||
+        text == 'safe' ||
+        text == 'inactive' ||
+        text == 'ended') {
+      return true;
+    }
+
+    if (text == '0' ||
+        text == 'false' ||
+        text == 'no' ||
+        text == 'active' ||
+        text == 'alert' ||
+        text == 'triggered' ||
+        text == 'unrecovered' ||
+        text == 'ongoing') {
+      return false;
+    }
+
+    if (text.contains('recover')) return true;
+    if (text.contains('resolved') ||
+        text.contains('clear') ||
+        text.contains('back to normal') ||
+        text.contains('attentive again')) {
+      return true;
+    }
+
+    if (text.contains('eyes closed') ||
+        text.contains('out of frame') ||
+        text.contains('inattentive') ||
+        text.contains('drows') ||
+        text.contains('fatigue') ||
+        text.contains('head down') ||
+        text.contains('no face')) {
+      return false;
+    }
+
+    return null;
   }
 
   int? _parsePercent(dynamic raw) {

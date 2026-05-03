@@ -15,6 +15,8 @@ class FleetOperatorDashboard extends StatefulWidget {
 
 class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
   static const int _fatigueRiskStep = 10;
+  static const int _fatigueRampStep = 2;
+  static const Duration _fatigueRampInterval = Duration(seconds: 2);
 
   static const String _jetsonWsUrl = String.fromEnvironment(
     'JETSON_WS_URL',
@@ -32,6 +34,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
   StreamSubscription<String>? _stateSub;
   Timer? _fleetPollTimer;
   Timer? _fleetRefreshDebounce;
+  Timer? _fatigueRampTimer;
 
   String _wsState = 'Disconnected';
   String? _fleetName;
@@ -42,6 +45,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
 
   final Map<String, _DriverData> _driversByUid = {};
   final Map<String, List<FleetAlert>> _liveAlertsByUid = {};
+  final Map<String, bool> _activeFatigueByUid = {};
 
   @override
   void initState() {
@@ -59,6 +63,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
 
     _loadFleetDrivers();
     _jetsonWs.connect();
+    _startFatigueRampTimer();
     _fleetPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _refreshFleetDrivers();
     });
@@ -71,6 +76,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
     _stateSub?.cancel();
     _fleetPollTimer?.cancel();
     _fleetRefreshDebounce?.cancel();
+    _fatigueRampTimer?.cancel();
     _liveAlertsVersion.dispose();
     _jetsonWs.dispose();
     super.dispose();
@@ -89,9 +95,22 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
       }
 
       for (final entry in entries) {
-        final nextRisk =
-            alert.fatigueRiskPercent ?? entry.value.risk + _fatigueRiskStep;
-        final updatedRisk = nextRisk.clamp(0, 100).toInt();
+        final isRecovered =
+            alert.recovered ?? _alertMessageLooksRecovered(alert.message);
+        if (isRecovered) {
+          _activeFatigueByUid[entry.key] = false;
+        } else {
+          _activeFatigueByUid[entry.key] = true;
+        }
+
+        final int updatedRisk;
+        if (alert.fatigueRiskPercent != null) {
+          updatedRisk = alert.fatigueRiskPercent!.clamp(0, 100).toInt();
+        } else if (isRecovered) {
+          updatedRisk = entry.value.risk;
+        } else {
+          updatedRisk = (entry.value.risk + _fatigueRiskStep).clamp(0, 100);
+        }
         _addLiveAlert(entry.key, alert);
         _driversByUid[entry.key] = entry.value.copyWith(
           risk: updatedRisk,
@@ -142,6 +161,9 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
 
       for (final entry in entries) {
         final updatedRisk = presence.fatigueRiskPercent;
+        if (!presence.online) {
+          _activeFatigueByUid[entry.key] = false;
+        }
         if (updatedRisk != null) {
           _driversByUid[entry.key] = entry.value.copyWith(
             isOnline: presence.online,
@@ -266,6 +288,35 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
     });
   }
 
+  void _startFatigueRampTimer() {
+    _fatigueRampTimer?.cancel();
+    _fatigueRampTimer = Timer.periodic(_fatigueRampInterval, (_) {
+      if (!mounted || _driversByUid.isEmpty) return;
+
+      var changed = false;
+      final now = DateTime.now();
+      for (final entry in _driversByUid.entries.toList()) {
+        final uid = entry.key;
+        final driver = entry.value;
+        final isActive = _activeFatigueByUid[uid] ?? false;
+        if (!isActive || !driver.isOnline || !driver.hasFatigueData) continue;
+        if (driver.risk >= 100) continue;
+
+        final nextRisk = (driver.risk + _fatigueRampStep).clamp(0, 100);
+        _driversByUid[uid] = driver.copyWith(
+          risk: nextRisk,
+          status: _statusFromRiskValue(nextRisk),
+          lastUpdated: now,
+        );
+        changed = true;
+      }
+
+      if (changed && mounted) {
+        setState(() {});
+      }
+    });
+  }
+
   Future<void> _refreshFleetDrivers() async {
     if (_isRefreshingFleet || _isLoadingFleet) return;
     _isRefreshingFleet = true;
@@ -304,6 +355,9 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
         );
       final beforePrune = _liveAlertsByUid.length;
       _liveAlertsByUid.removeWhere((uid, _) => !_driversByUid.containsKey(uid));
+      _activeFatigueByUid.removeWhere(
+        (uid, _) => !_driversByUid.containsKey(uid),
+      );
       if (_liveAlertsByUid.length != beforePrune) {
         _liveAlertsVersion.value++;
       }
@@ -608,6 +662,16 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
     }
     return merged;
   }
+}
+
+bool _alertMessageLooksRecovered(String message) {
+  final text = message.trim().toLowerCase();
+  if (text.isEmpty) return false;
+  return text.contains('recover') ||
+      text.contains('resolved') ||
+      text.contains('clear') ||
+      text.contains('back to normal') ||
+      text.contains('attentive again');
 }
 
 class _DriverData {
