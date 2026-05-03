@@ -16,6 +16,7 @@ class FleetOperatorDashboard extends StatefulWidget {
 class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
   static const int _fatigueRiskStep = 10;
   static const int _fatigueRampStep = 2;
+  static const int _fatigueRecoveryStep = 2;
   static const Duration _fatigueRampInterval = Duration(seconds: 2);
 
   static const String _jetsonWsUrl = String.fromEnvironment(
@@ -299,10 +300,17 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
         final uid = entry.key;
         final driver = entry.value;
         final isActive = _activeFatigueByUid[uid] ?? false;
-        if (!isActive || !driver.isOnline || !driver.hasFatigueData) continue;
-        if (driver.risk >= 100) continue;
+        if (!driver.isOnline || !driver.hasFatigueData) continue;
 
-        final nextRisk = (driver.risk + _fatigueRampStep).clamp(0, 100);
+        final int nextRisk;
+        if (isActive) {
+          if (driver.risk >= 100) continue;
+          nextRisk = (driver.risk + _fatigueRampStep).clamp(0, 100);
+        } else {
+          if (driver.risk <= 0) continue;
+          nextRisk = (driver.risk - _fatigueRecoveryStep).clamp(0, 100);
+        }
+
         _driversByUid[uid] = driver.copyWith(
           risk: nextRisk,
           status: _statusFromRiskValue(nextRisk),

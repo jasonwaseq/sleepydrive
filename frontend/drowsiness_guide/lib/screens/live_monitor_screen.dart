@@ -39,6 +39,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
   static const int _fatigueRiskResetValue = 0;
   static const int _fatigueRiskStep = 10;
   static const int _fatigueRampStep = 2;
+  static const int _fatigueRecoveryStep = 2;
   static const Duration _fatigueRampInterval = Duration(seconds: 2);
 
   String? _fleetName;
@@ -247,11 +248,21 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     _fatigueRampTimer?.cancel();
     _fatigueRampTimer = Timer.periodic(_fatigueRampInterval, (_) {
       if (!mounted) return;
-      if (!_hasUnrecoveredJetsonAlert) return;
       if (_jetsonDeviceState != 'Online') return;
-      if (_fatigueRisk >= 100) return;
       setState(() {
-        _fatigueRisk = (_fatigueRisk + _fatigueRampStep).clamp(0, 100).toInt();
+        if (_hasUnrecoveredJetsonAlert) {
+          if (_fatigueRisk < 100) {
+            _fatigueRisk = (_fatigueRisk + _fatigueRampStep)
+                .clamp(0, 100)
+                .toInt();
+          }
+          return;
+        }
+        if (_fatigueRisk > 0) {
+          _fatigueRisk = (_fatigueRisk - _fatigueRecoveryStep)
+              .clamp(0, 100)
+              .toInt();
+        }
       });
     });
   }
