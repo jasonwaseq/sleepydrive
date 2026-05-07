@@ -8,6 +8,7 @@ import '../services/jetson_websocket_service.dart';
 import '../services/user_role_service.dart';
 import '../secrets.dart';
 import '../services/auth_service.dart';
+import '../utils/fatigue_risk_logic.dart';
 
 // -------------------- Color System --------------------
 
@@ -42,9 +43,6 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     defaultValue: 'wss://sleepydrive.onrender.com/ws/alerts?replay=0',
   );
   static const int _fatigueRiskResetValue = 0;
-  static const int _fatigueRiskStep = 10;
-  static const int _fatigueRampStep = 2;
-  static const int _fatigueRecoveryStep = 2;
   static const Duration _fatigueRampInterval = Duration(seconds: 2);
 
   String? _fleetName;
@@ -209,11 +207,12 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
         _hasUnrecoveredJetsonAlert = true;
       }
 
-      if (fatigueRiskPercent != null) {
-        _fatigueRisk = fatigueRiskPercent.clamp(0, 100).toInt();
-      } else if (!isJetson || isUnrecovered) {
-        final nextRisk = _fatigueRisk + _fatigueRiskStep;
-        _fatigueRisk = nextRisk.clamp(0, 100).toInt();
+      if (isJetson) {
+        _fatigueRisk = FatigueRiskLogic.applyAlert(
+          currentRisk: _fatigueRisk,
+          isRecovered: isRecovered,
+          reportedRiskPercent: fatigueRiskPercent,
+        );
       }
       _alerts.insert(
         0,
@@ -258,19 +257,10 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
       if (!mounted) return;
       if (_jetsonDeviceState != 'Online') return;
       setState(() {
-        if (_hasUnrecoveredJetsonAlert) {
-          if (_fatigueRisk < 100) {
-            _fatigueRisk = (_fatigueRisk + _fatigueRampStep)
-                .clamp(0, 100)
-                .toInt();
-          }
-          return;
-        }
-        if (_fatigueRisk > 0) {
-          _fatigueRisk = (_fatigueRisk - _fatigueRecoveryStep)
-              .clamp(0, 100)
-              .toInt();
-        }
+        _fatigueRisk = FatigueRiskLogic.applyRamp(
+          currentRisk: _fatigueRisk,
+          isActiveFatigue: _hasUnrecoveredJetsonAlert,
+        );
       });
     });
   }

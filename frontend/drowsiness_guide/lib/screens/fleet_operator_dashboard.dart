@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:drowsiness_guide/services/jetson_websocket_service.dart';
 import 'package:drowsiness_guide/services/auth_service.dart';
 import 'package:drowsiness_guide/services/user_role_service.dart';
+import 'package:drowsiness_guide/utils/fatigue_risk_logic.dart';
 
 class FleetOperatorDashboard extends StatefulWidget {
   const FleetOperatorDashboard({
@@ -23,9 +24,6 @@ class FleetOperatorDashboard extends StatefulWidget {
 }
 
 class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
-  static const int _fatigueRiskStep = 10;
-  static const int _fatigueRampStep = 2;
-  static const int _fatigueRecoveryStep = 2;
   static const Duration _fatigueRampInterval = Duration(seconds: 2);
 
   static const String _jetsonWsUrl = String.fromEnvironment(
@@ -119,14 +117,11 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
           _activeFatigueByUid[entry.key] = true;
         }
 
-        final int updatedRisk;
-        if (alert.fatigueRiskPercent != null) {
-          updatedRisk = alert.fatigueRiskPercent!.clamp(0, 100).toInt();
-        } else if (isRecovered) {
-          updatedRisk = entry.value.risk;
-        } else {
-          updatedRisk = (entry.value.risk + _fatigueRiskStep).clamp(0, 100);
-        }
+        final updatedRisk = FatigueRiskLogic.applyAlert(
+          currentRisk: entry.value.risk,
+          isRecovered: isRecovered,
+          reportedRiskPercent: alert.fatigueRiskPercent,
+        );
         _addLiveAlert(entry.key, alert);
         _driversByUid[entry.key] = entry.value.copyWith(
           risk: updatedRisk,
@@ -326,14 +321,11 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
         final isActive = _activeFatigueByUid[uid] ?? false;
         if (!driver.isOnline || !driver.hasFatigueData) continue;
 
-        final int nextRisk;
-        if (isActive) {
-          if (driver.risk >= 100) continue;
-          nextRisk = (driver.risk + _fatigueRampStep).clamp(0, 100);
-        } else {
-          if (driver.risk <= 0) continue;
-          nextRisk = (driver.risk - _fatigueRecoveryStep).clamp(0, 100);
-        }
+        final nextRisk = FatigueRiskLogic.applyRamp(
+          currentRisk: driver.risk,
+          isActiveFatigue: isActive,
+        );
+        if (nextRisk == driver.risk) continue;
 
         _driversByUid[uid] = driver.copyWith(
           risk: nextRisk,
@@ -789,7 +781,21 @@ String _driverDisplayName(FleetDriver driver) {
 }
 
 _DriverData _mergeDriverData(_DriverData previous, _DriverData next) {
+  final previousTime = previous.lastUpdated;
+  final nextTime = next.lastUpdated;
+  final previousIsCurrent =
+      previousTime != null &&
+      DateTime.now().difference(previousTime).inMinutes < 5;
+
   if (!next.isOnline) {
+    if (previous.isOnline && previousIsCurrent) {
+      return previous.copyWith(
+        alertCount: next.alertCount >= previous.alertCount
+            ? next.alertCount
+            : previous.alertCount,
+        lastAlert: previous.lastAlert ?? next.lastAlert,
+      );
+    }
     return next.copyWith(
       risk: 0,
       status: _statusFromRiskValue(0),
@@ -801,12 +807,6 @@ _DriverData _mergeDriverData(_DriverData previous, _DriverData next) {
       lastUpdated: next.lastUpdated ?? previous.lastUpdated,
     );
   }
-
-  final previousTime = previous.lastUpdated;
-  final nextTime = next.lastUpdated;
-  final previousIsCurrent =
-      previousTime != null &&
-      DateTime.now().difference(previousTime).inMinutes < 5;
   final previousIsNewer =
       previousIsCurrent && (nextTime == null || previousTime.isAfter(nextTime));
 
@@ -859,7 +859,7 @@ String _statusFromRiskValue(int risk) {
   if (risk >= 50) return 'High fatigue';
   if (risk >= 30) return 'Moderate fatigue';
   if (risk >= 10) return 'Low fatigue';
-  return 'No data';
+  return 'No fatigue';
 }
 
 Color _riskColor(int risk, {required bool hasFatigueData}) {
