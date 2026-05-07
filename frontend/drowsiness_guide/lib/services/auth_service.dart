@@ -12,7 +12,6 @@ class AuthUser {
 }
 
 class AuthService {
-  static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'auth_token';
   static const _signupPaths = <String>[
     '/auth/signup',
@@ -25,6 +24,13 @@ class AuthService {
     defaultValue: 'https://sleepydrive.onrender.com',
   );
   static const _timeout = Duration(seconds: 20);
+
+  final FlutterSecureStorage _storage;
+  final http.Client _client;
+
+  AuthService({http.Client? httpClient, FlutterSecureStorage? storage})
+      : _client = httpClient ?? http.Client(),
+        _storage = storage ?? const FlutterSecureStorage();
 
   AuthUser? _currentUser;
   final _authStateController = StreamController<AuthUser?>.broadcast();
@@ -75,7 +81,7 @@ class AuthService {
     required String email,
     required String password,
   }) async {
-    final response = await http
+    final response = await _client
         .post(
           Uri.parse('$_backendBaseUrl/auth/login'),
           headers: const {'Content-Type': 'application/json'},
@@ -98,7 +104,7 @@ class AuthService {
     http.Response? last404;
 
     for (final path in _signupPaths) {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$_backendBaseUrl$path'),
             headers: const {'Content-Type': 'application/json'},

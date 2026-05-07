@@ -265,9 +265,15 @@ class UserRoleService {
 
   static const _timeout = Duration(seconds: 20);
 
+  final http.Client _client;
+  final FlutterSecureStorage _storage;
+
+  UserRoleService({http.Client? httpClient, FlutterSecureStorage? storage})
+      : _client = httpClient ?? http.Client(),
+        _storage = storage ?? const FlutterSecureStorage();
+
   Future<Map<String, String>> _headers({bool json = false}) async {
-    const storage = FlutterSecureStorage();
-    final token = await storage.read(key: 'auth_token');
+    final token = await _storage.read(key: 'auth_token');
     if (token == null || token.isEmpty) {
       throw const UserRoleServiceException('Not authenticated');
     }
@@ -304,7 +310,7 @@ class UserRoleService {
   Future<UserProfile?> fetchProfile(String uid) async {
     final http.Response response;
     try {
-      response = await http
+      response = await _client
           .get(
             Uri.parse('$backendBaseUrl/users/$uid'),
             headers: await _headers(),
@@ -335,7 +341,7 @@ class UserRoleService {
   Future<String?> fetchRole(String uid) async {
     final http.Response response;
     try {
-      response = await http
+      response = await _client
           .get(
             Uri.parse('$backendBaseUrl/users/$uid'),
             headers: await _headers(),
@@ -378,7 +384,7 @@ class UserRoleService {
   }) async {
     final http.Response response;
     try {
-      response = await http
+      response = await _client
           .post(
             Uri.parse('$backendBaseUrl/users'),
             headers: await _headers(json: true),
@@ -419,7 +425,7 @@ class UserRoleService {
   Future<FleetDashboardData> fetchFleetDashboard() async {
     final http.Response response;
     try {
-      response = await http
+      response = await _client
           .get(
             Uri.parse('$backendBaseUrl/fleet/drivers'),
             headers: await _headers(),
@@ -452,7 +458,7 @@ class UserRoleService {
   Future<List<FleetAlert>> fetchDriverAlerts(String driverUid) async {
     final http.Response response;
     try {
-      response = await http
+      response = await _client
           .get(
             Uri.parse('$backendBaseUrl/fleet/drivers/$driverUid/alerts'),
             headers: await _headers(),
@@ -487,7 +493,7 @@ class UserRoleService {
   Future<void> removeDriver(String driverUid) async {
     final http.Response response;
     try {
-      response = await http
+      response = await _client
           .delete(
             Uri.parse('$backendBaseUrl/fleet/drivers/$driverUid'),
             headers: await _headers(),
