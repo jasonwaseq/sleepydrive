@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app as app_module
+from auth import issue_token
 from tests.conftest import FakeConn, FakePool
 from schemas import AlertEvent
 
@@ -198,3 +199,105 @@ def test_alerts_recent_rejects_invalid_device_id(api_harness):
         headers={"X-API-Key": "test-gateway-key"},
     )
     assert resp.status_code == 400
+
+
+def test_fleet_drivers_online_driver_stays_live_without_recent_alert(api_harness):
+    conn = api_harness["conn"]
+
+    async def fetchrow_handler(query, *args):
+        if "FROM users u" in query and "WHERE u.uid = $1" in query:
+            return {
+                "uid": "operator-1",
+                "role": "operator",
+                "email": "operator@example.com",
+                "display_name": "Operator One",
+                "fleet_id": "fleet-1",
+                "device_id": None,
+                "fleet_name": "Acme Fleet",
+                "fleet_invite_code": "INV12345",
+            }
+        return None
+
+    async def fetch_handler(query, *args):
+        if "FROM users u" in query and "WHERE u.role = 'driver'" in query:
+            return [
+                {
+                    "uid": "driver-1",
+                    "email": "driver@example.com",
+                    "display_name": "Driver One",
+                    "device_id": "jetson-1",
+                    "online": True,
+                    "last_seen": datetime(2025, 1, 1, tzinfo=timezone.utc),
+                    "status_metadata": {"fatigue_risk_percent": 41},
+                    "alert_id": None,
+                    "alert_level": None,
+                    "alert_message": None,
+                    "alert_event_ts": None,
+                    "alert_received_ts": None,
+                    "alert_metadata": {},
+                    "alert_count": 0,
+                },
+            ]
+        return []
+
+    conn.fetchrow_handler = fetchrow_handler
+    conn.fetch_handler = fetch_handler
+
+    token = issue_token(
+        uid="operator-1",
+        email="operator@example.com",
+        secret="test-jwt-secret",
+        expiry_hours=24,
+    )
+    resp = api_harness["client"].get(
+        "/fleet/drivers",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["drivers"][0]["online"] is True
+    assert body["drivers"][0]["fatigue_risk_percent"] == 41
+
+
+def test_fleet_drivers_query_does_not_expire_online_by_last_seen(api_harness):
+    conn = api_harness["conn"]
+
+    async def fetchrow_handler(query, *args):
+        if "FROM users u" in query and "WHERE u.uid = $1" in query:
+            return {
+                "uid": "operator-1",
+                "role": "operator",
+                "email": "operator@example.com",
+                "display_name": "Operator One",
+                "fleet_id": "fleet-1",
+                "device_id": None,
+                "fleet_name": "Acme Fleet",
+                "fleet_invite_code": "INV12345",
+            }
+        return None
+
+    async def fetch_handler(query, *args):
+        return []
+
+    conn.fetchrow_handler = fetchrow_handler
+    conn.fetch_handler = fetch_handler
+
+    token = issue_token(
+        uid="operator-1",
+        email="operator@example.com",
+        secret="test-jwt-secret",
+        expiry_hours=24,
+    )
+    resp = api_harness["client"].get(
+        "/fleet/drivers",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    fleet_query = next(
+        query
+        for query, _ in conn.fetch_calls
+        if "WHERE u.role = 'driver'" in query and "LEFT JOIN device_status" in query
+    )
+    assert "INTERVAL '45 seconds'" not in fleet_query

@@ -176,13 +176,22 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
       }
 
       for (final entry in entries) {
-        final updatedRisk = presence.fatigueRiskPercent;
         if (!presence.online) {
           _activeFatigueByUid[entry.key] = false;
+          _driversByUid[entry.key] = entry.value.copyWith(
+            isOnline: false,
+            risk: 0,
+            status: _statusFromRiskValue(0),
+            hasFatigueData: true,
+            lastUpdated: presence.timestamp,
+          );
+          continue;
         }
+
+        final updatedRisk = presence.fatigueRiskPercent;
         if (updatedRisk != null) {
           _driversByUid[entry.key] = entry.value.copyWith(
-            isOnline: presence.online,
+            isOnline: true,
             risk: updatedRisk,
             status: _statusFromRiskValue(updatedRisk),
             hasFatigueData: true,
@@ -190,7 +199,7 @@ class _FleetOperatorDashboardState extends State<FleetOperatorDashboard> {
           );
         } else {
           _driversByUid[entry.key] = entry.value.copyWith(
-            isOnline: presence.online,
+            isOnline: true,
             lastUpdated: presence.timestamp,
           );
         }
@@ -780,6 +789,19 @@ String _driverDisplayName(FleetDriver driver) {
 }
 
 _DriverData _mergeDriverData(_DriverData previous, _DriverData next) {
+  if (!next.isOnline) {
+    return next.copyWith(
+      risk: 0,
+      status: _statusFromRiskValue(0),
+      hasFatigueData: true,
+      alertCount: next.alertCount >= previous.alertCount
+          ? next.alertCount
+          : previous.alertCount,
+      lastAlert: next.lastAlert ?? previous.lastAlert,
+      lastUpdated: next.lastUpdated ?? previous.lastUpdated,
+    );
+  }
+
   final previousTime = previous.lastUpdated;
   final nextTime = next.lastUpdated;
   final previousIsCurrent =

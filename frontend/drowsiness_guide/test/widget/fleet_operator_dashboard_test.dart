@@ -8,6 +8,7 @@ import '../helpers/mocks.dart';
 void main() {
   late MockJetsonWebSocketService mockWs;
   late MockUserRoleService mockRole;
+  const fleet = FleetInfo(id: 'f1', name: 'Acme Fleet', inviteCode: 'INV');
 
   setUp(() {
     mockWs = MockJetsonWebSocketService();
@@ -24,7 +25,7 @@ void main() {
       (tester) async {
     when(mockRole.fetchFleetDashboard()).thenAnswer(
       (_) async => FleetDashboardData(
-        fleet: FleetInfo(id: 'f1', name: 'Acme Fleet', inviteCode: 'INV'),
+        fleet: fleet,
         drivers: const [],
       ),
     );
@@ -49,7 +50,7 @@ void main() {
   testWidgets('disposes Jetson service when widget is removed', (tester) async {
     when(mockRole.fetchFleetDashboard()).thenAnswer(
       (_) async => FleetDashboardData(
-        fleet: FleetInfo(id: 'f1', name: 'X', inviteCode: 'I'),
+        fleet: fleet,
         drivers: const [],
       ),
     );
@@ -70,4 +71,5 @@ void main() {
 
     verify(mockWs.dispose()).called(1);
   });
+
 }

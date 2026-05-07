@@ -717,10 +717,7 @@ def create_app() -> FastAPI:
                     u.email,
                     u.display_name,
                     u.device_id,
-                    (
-                        ds.online IS TRUE
-                        AND ds.last_seen >= NOW() - INTERVAL '45 seconds'
-                    ) AS online,
+                    (ds.online IS TRUE) AS online,
                     ds.last_seen,
                     ds.metadata AS status_metadata,
                     ae.id AS alert_id,
@@ -763,14 +760,15 @@ def create_app() -> FastAPI:
         for row in rows:
             status_metadata = row["status_metadata"] if isinstance(row["status_metadata"], dict) else {}
             alert_metadata = row["alert_metadata"] if isinstance(row["alert_metadata"], dict) else {}
-            fatigue_risk_percent = _metadata_percent(alert_metadata)
-            if fatigue_risk_percent is None and row["online"]:
-                fatigue_risk_percent = _metadata_percent(status_metadata)
-            if fatigue_risk_percent is None:
-                fatigue_risk_percent = _risk_from_alert_level(row["alert_level"])
             is_online = bool(row["online"]) if row["online"] is not None else False
-            if row["alert_id"] is not None:
-                is_online = True
+            if is_online:
+                fatigue_risk_percent = _metadata_percent(alert_metadata)
+                if fatigue_risk_percent is None:
+                    fatigue_risk_percent = _metadata_percent(status_metadata)
+                if fatigue_risk_percent is None:
+                    fatigue_risk_percent = _risk_from_alert_level(row["alert_level"])
+            else:
+                fatigue_risk_percent = 0
 
             latest_alert = None
             if row["alert_id"] is not None:
