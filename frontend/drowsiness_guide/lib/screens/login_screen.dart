@@ -162,7 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return 'This account has been disabled.';
     }
     if (text.contains('operation-not-allowed')) {
-      return 'Email/password sign-in is not enabled in Firebase.';
+      return 'Email/password sign-in is not enabled for this backend.';
     }
     if (text.contains('No authenticated user found')) {
       return 'Authentication succeeded, but no user session was available.';

@@ -12,7 +12,7 @@ void _suppressOverflowErrors() {
   addTearDown(() => FlutterError.onError = original);
 }
 
-/// Broader smoke path without Firebase (matches injected-deps pattern used in
+/// Broader smoke path without legacy auth SDK dependencies (matches injected-deps pattern used in
 /// [login_screen_test.dart]).
 void main() {
   testWidgets('login screen shows keyed fields with mocked auth stack',

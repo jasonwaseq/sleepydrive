@@ -213,8 +213,7 @@ void main() {
   group('LoginScreen — error handling', () {
     testWidgets('wrong-password error shows friendly message', (tester) async {
       when(mockAuth.signInWithEmailPassword(email: _email, password: _pass))
-          .thenThrow(
-              Exception('[firebase_auth/wrong-password] Wrong password'));
+          .thenThrow(Exception('[auth/wrong-password] Wrong password'));
 
       _suppressOverflowErrors();
       await tester.pumpWidget(buildScreen());
@@ -230,7 +229,7 @@ void main() {
     testWidgets('invalid-credential error shows friendly message',
         (tester) async {
       when(mockAuth.signInWithEmailPassword(email: _email, password: _pass))
-          .thenThrow(Exception('[firebase_auth/invalid-credential]'));
+          .thenThrow(Exception('[auth/invalid-credential]'));
 
       _suppressOverflowErrors();
       await tester.pumpWidget(buildScreen());
@@ -245,8 +244,7 @@ void main() {
 
     testWidgets('network error shows connectivity message', (tester) async {
       when(mockAuth.signInWithEmailPassword(email: _email, password: _pass))
-          .thenThrow(Exception(
-              '[firebase_auth/network-request-failed] Network error'));
+          .thenThrow(Exception('[auth/network-request-failed] Network error'));
 
       _suppressOverflowErrors();
       await tester.pumpWidget(buildScreen());

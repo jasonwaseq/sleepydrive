@@ -17,7 +17,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, WebSocket, WebSocketD
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from auth import AuthUser, require_firebase_user
+from auth import AuthUser, require_jwt_user
 from db import Database
 from mqtt_consumer import MQTTConsumer
 from repository import AlertRepository
@@ -357,9 +357,9 @@ def create_app() -> FastAPI:
     )
 
     def _auth_user(authorization: str | None) -> AuthUser:
-        return require_firebase_user(
+        return require_jwt_user(
             authorization=authorization,
-            project_id=settings.firebase_project_id,
+            secret=settings.jwt_secret,
         )
 
     @app.get("/routing/driving")

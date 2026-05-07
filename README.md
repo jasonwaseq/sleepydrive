@@ -15,3 +15,19 @@ After cloning this repo, initialize it with:
 # How to run:
 
 `flutter run`
+
+## Backend tests (server/database)
+
+From the repo root:
+
+```bash
+cd backend
+python -m pip install -r requirements.txt -r requirements-test.txt
+python -m pytest
+```
+
+For just server/database-focused coverage:
+
+```bash
+python -m pytest tests/test_app_api.py tests/test_mqtt_consumer.py tests/test_repository.py
+```

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass
 
 
@@ -102,7 +103,7 @@ class Settings:
     ws_max_incoming_bytes: int
     db_command_timeout_seconds: float
     cors_allow_origins: tuple[str, ...]
-    firebase_project_id: str
+    jwt_secret: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -167,5 +168,5 @@ class Settings:
             ws_max_incoming_bytes=ws_in,
             db_command_timeout_seconds=db_timeout,
             cors_allow_origins=cors_allow_origins,
-            firebase_project_id=os.getenv("FIREBASE_PROJECT_ID", "droswy-driving"),
+            jwt_secret=os.getenv("JWT_SECRET") or secrets.token_hex(32),
         )

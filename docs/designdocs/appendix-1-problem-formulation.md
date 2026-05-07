@@ -137,7 +137,7 @@ The morphological chart below maps each functional requirement of the system to 
 | **Drowsiness metric** | **EAR (Eye Aspect Ratio)** | PERCLOS | Head pose estimation | Blink frequency |
 | **Fatigue classification** | Threshold-based (EAR < value) | **Temporal analysis (EAR over sliding window)** | CNN binary classifier | Hybrid (threshold + CNN) |
 | **Jetson → backend comm** | **MQTT publish** | HTTP POST | Direct WebSocket | BLE |
-| **Backend storage** | **PostgreSQL** | MongoDB | SQLite | Firebase Realtime DB |
+| **Backend storage** | **PostgreSQL** | MongoDB | SQLite | Redis |
 | **Backend → app comm** | **WebSocket gateway** | FCM push | Polling (HTTP) | Server-Sent Events |
 | **Mobile framework** | **Flutter** | React Native | Native iOS + Android | Kotlin Multiplatform |
 | **Alert modality** | Visual popup only | **Audio alarm + vibration + visual** | Haptic wearable | Seat vibration motor |
