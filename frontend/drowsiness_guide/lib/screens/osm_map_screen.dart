@@ -44,6 +44,8 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
     'BACKEND_BASE_URL',
     defaultValue: 'https://sleepydrive.onrender.com',
   );
+  static const Duration _locationTimeout = Duration(seconds: 12);
+  static const Duration _lastKnownLocationTimeout = Duration(seconds: 3);
 
   Position? _pos;
   LatLng? _dest;
@@ -57,6 +59,7 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
 
   String _status = 'Loading location…';
   String _routeInfo = '';
+  bool _isDisposed = false;
 
   String get _routingBackendBaseUrl => _backendBaseUrl.endsWith('/')
       ? _backendBaseUrl.substring(0, _backendBaseUrl.length - 1)
@@ -74,15 +77,58 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
     _initLocation();
   }
 
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  bool get _canUpdateUi => mounted && !_isDisposed;
+
+  void _safeSetState(VoidCallback updater) {
+    if (!_canUpdateUi) return;
+    setState(updater);
+  }
+
+  Future<Position?> _getPositionWithFallback({
+    required Future<Position> Function() fetchCurrent,
+  }) async {
+    try {
+      return await fetchCurrent().timeout(_locationTimeout);
+    } on TimeoutException {
+      debugPrint(
+        'Location request timed out after ${_locationTimeout.inSeconds}s; trying last known position.',
+      );
+      try {
+        return await Geolocator.getLastKnownPosition().timeout(
+          _lastKnownLocationTimeout,
+        );
+      } catch (e) {
+        debugPrint('Failed to read last known position: $e');
+        return null;
+      }
+    }
+  }
+
   Future<void> _initLocation() async {
     try {
       if (widget.getCurrentPosition != null) {
-        setState(() => _status = 'Getting current position…');
-        final p = await widget.getCurrentPosition!();
-        setState(() {
+        _safeSetState(() => _status = 'Getting current position…');
+        final p = await _getPositionWithFallback(
+          fetchCurrent: widget.getCurrentPosition!,
+        );
+        if (p == null) {
+          _safeSetState(
+            () => _status =
+                'Unable to determine location. Set emulator location and retry.',
+          );
+          return;
+        }
+        _safeSetState(() {
           _pos = p;
           _status = 'Ready';
         });
+        if (!_canUpdateUi) return;
 
         final me = LatLng(p.latitude, p.longitude);
         _mapController.move(me, 14);
@@ -95,38 +141,48 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
         return;
       }
 
-      setState(() => _status = 'Requesting location permission…');
+      _safeSetState(() => _status = 'Requesting location permission…');
 
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
       if (perm == LocationPermission.deniedForever) {
-        setState(() => _status = 'Location permission denied forever.');
+        _safeSetState(() => _status = 'Location permission denied forever.');
         return;
       }
       if (perm == LocationPermission.denied) {
-        setState(() => _status = 'Location permission denied.');
+        _safeSetState(() => _status = 'Location permission denied.');
         return;
       }
 
       final enabled = await Geolocator.isLocationServiceEnabled();
       if (!enabled) {
-        setState(() => _status = 'Location services are disabled.');
+        _safeSetState(() => _status = 'Location services are disabled.');
         return;
       }
 
-      setState(() => _status = 'Getting current position…');
-      final p = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+      _safeSetState(() => _status = 'Getting current position…');
+      final p = await _getPositionWithFallback(
+        fetchCurrent: () => Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+          ),
         ),
       );
+      if (p == null) {
+        _safeSetState(
+          () => _status =
+              'Unable to determine location. Set emulator location and retry.',
+        );
+        return;
+      }
 
-      setState(() {
+      _safeSetState(() {
         _pos = p;
         _status = 'Ready';
       });
+      if (!_canUpdateUi) return;
 
       final me = LatLng(p.latitude, p.longitude);
       _mapController.move(me, 14);
@@ -137,7 +193,7 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
         await _buildRoute();
       }
     } catch (e) {
-      setState(() => _status = 'Failed to get location: $e');
+      _safeSetState(() => _status = 'Failed to get location: $e');
     }
   }
 
@@ -147,7 +203,7 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
     final from = LatLng(_pos!.latitude, _pos!.longitude);
     final to = _dest!;
 
-    setState(() {
+      _safeSetState(() {
       _status = 'Routing…';
       _route = [];
       _routeInfo = '';
@@ -158,7 +214,7 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
       final routes = data['routes'] as List<dynamic>?;
 
       if (routes == null || routes.isEmpty) {
-        setState(() => _status = 'No driving route found.');
+        _safeSetState(() => _status = 'No driving route found.');
         return;
       }
 
@@ -176,7 +232,7 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
           )
           .toList();
       if (pts.isEmpty) {
-        setState(() => _status = 'Driving route returned no geometry.');
+        _safeSetState(() => _status = 'Driving route returned no geometry.');
         return;
       }
 
@@ -192,21 +248,23 @@ class _OSMMapScreenState extends State<OSMMapScreen> {
       final miles = distanceM / 1609.344;
       final etaMin = (durationS / 60).round();
 
-      setState(() {
+      _safeSetState(() {
         _route = pts;
         _status = 'Ready';
         _routeInfo = '$stopName • ${miles.toStringAsFixed(1)} mi • $etaMin min';
       });
+      if (!_canUpdateUi) return;
 
       _fitToPoints([from, to, ...pts]);
     } catch (e) {
       debugPrint('OSRM route API failed: $e');
-      setState(() {
+      _safeSetState(() {
         _route = [];
         _routeInfo = '';
         _status =
             'Driving route unavailable. Tap navigate to open Google Maps.';
       });
+      if (!_canUpdateUi) return;
       _fitToPoints([from, to]);
     }
   }

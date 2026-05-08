@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drowsiness_guide/screens/osm_map_screen.dart';
@@ -22,5 +24,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.textContaining('Failed to get location'), findsOneWidget);
+  });
+
+  testWidgets('shows timeout fallback message when injected location stalls', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OSMMapScreen(
+          osmPlacesService: MockOSMPlacesService(),
+          getCurrentPosition: () => Completer<Never>().future,
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 16));
+
+    // Timeout path should resolve out of the "getting position" state, either
+    // by using last known location or by showing an explicit fallback message.
+    expect(find.textContaining('Getting current position'), findsNothing);
   });
 }
