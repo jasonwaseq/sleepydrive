@@ -114,8 +114,8 @@ def test_spec_1_drowsiness_alert_chain_driver_view(e2e_harness):
         while data.get("type") != "alert":
             data = websocket.receive_json()
         assert data["type"] == "alert"
-        assert data["alert"]["device_id"] == "driver-device"
-        assert data["alert"]["level"] == 2
+        assert data["data"]["device_id"] == "driver-device"
+        assert data["data"]["level"] == 2
 
 
 def test_spec_3_version_comparison_driver_view(e2e_harness):
@@ -130,15 +130,15 @@ def test_spec_3_version_comparison_driver_view(e2e_harness):
 
     # In an automated harness, we simulate "Version A" producing an event
     with client.websocket_connect("/ws/alerts?token=test-gateway-key") as websocket:
-        stream.messages.append(_Message("sleepydrive/alerts/dev-A", b'{"level": 2, "risk": 85}'))
+        stream.messages.append(_Message("sleepydrive/alerts/dev-A", b'{"level": 2, "metadata": {"risk": 85}}'))
         data = websocket.receive_json()
-        while data.get("type") != "alert" or data["alert"].get("device_id") != "dev-A":
+        while data.get("type") != "alert" or data["data"].get("device_id") != "dev-A":
             data = websocket.receive_json()
-        assert data["alert"]["metadata"]["risk"] == 85
+        assert data["data"]["metadata"]["risk"] == 85
 
         # And "Version B" producing a different event
-        stream.messages.append(_Message("sleepydrive/alerts/dev-B", b'{"level": 1, "risk": 70}'))
+        stream.messages.append(_Message("sleepydrive/alerts/dev-B", b'{"level": 1, "metadata": {"risk": 70}}'))
         data2 = websocket.receive_json()
-        while data2.get("type") != "alert" or data2["alert"].get("device_id") != "dev-B":
+        while data2.get("type") != "alert" or data2["data"].get("device_id") != "dev-B":
             data2 = websocket.receive_json()
-        assert data2["alert"]["metadata"]["risk"] == 70
+        assert data2["data"]["metadata"]["risk"] == 70
