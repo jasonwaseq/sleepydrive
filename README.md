@@ -16,6 +16,21 @@ After cloning this repo, initialize it with:
 
 `flutter run`
 
+## Frontend Tests
+
+To run the Flutter tests locally, you must first create a `secrets.dart` file since it requires the OpenWeather API key.
+
+1. Create `frontend/drowsiness_guide/lib/secrets.dart`
+2. Add your OpenWeather API key:
+```dart
+const String openWeatherApiKey = 'YOUR_API_KEY_HERE';
+```
+3. Run the tests:
+```bash
+cd frontend/drowsiness_guide
+flutter test
+```
+
 ## Backend tests (server/database)
 
 From the repo root:

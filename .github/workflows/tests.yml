@@ -25,20 +25,4 @@ jobs:
         cd backend
         python -m pytest
 
-  frontend-tests:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        flutter-version: '3.x'
-        channel: 'stable'
-    - name: Install dependencies
-      run: |
-        cd frontend/drowsiness_guide
-        flutter pub get
-    - name: Run Flutter Test
-      run: |
-        cd frontend/drowsiness_guide
-        flutter test
+
