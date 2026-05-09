@@ -31,3 +31,24 @@ For just server/database-focused coverage:
 ```bash
 python -m pytest tests/test_app_api.py tests/test_mqtt_consumer.py tests/test_repository.py
 ```
+
+## End-to-End Tests
+
+We have automated end-to-end blackbox tests that test the entire alert chain (MQTT injection -> Backend/Database -> WebSocket broadcast -> Flutter UI update). 
+
+To run the backend E2E tests:
+```bash
+cd backend
+python -m pytest tests/test_e2e_alert_chain.py tests/test_e2e_fleet_event.py
+```
+
+To run the frontend E2E test:
+```bash
+cd frontend/drowsiness_guide
+flutter test test/integration/drowsiness_alert_e2e_test.dart
+```
+*(Note: To run the frontend E2E test properly, you must have the backend running locally (`python run_server.py`) and manually trigger the helper script `backend/tests/helpers/inject_event.py` while the test is waiting for the alert.)*
+
+## Manual User Test Protocol
+
+For assessing safety claims and real-world latency from the perspective of the Driver and Fleet Operator, see the [Manual Test Protocol](docs/manual_test_protocol.md). This document contains step-by-step instructions for reproducing and logging drowsiness events, including version A/B comparison metrics.
