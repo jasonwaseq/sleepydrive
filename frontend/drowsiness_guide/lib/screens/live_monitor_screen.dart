@@ -78,6 +78,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
   String _jetsonDeviceState = 'Offline';
   int _fatigueRisk = _fatigueRiskResetValue;
   bool _hasUnrecoveredJetsonAlert = false;
+  DateTime? _activeFatigueStartedAt;
   DateTime? _jetsonLastSeen;
   final List<_DashboardAlert> _alerts = [];
   static const Duration _jetsonStaleAfter = Duration(seconds: 30);
@@ -139,6 +140,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
         source: 'Jetson WS',
         alertTimestamp: alert.timestamp,
         fatigueRiskPercent: alert.fatigueRiskPercent,
+        fatigueEventDurationSeconds: alert.fatigueEventDurationSeconds,
         recovered: alert.recovered,
       );
     });
@@ -190,6 +192,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
     required String source,
     DateTime? alertTimestamp,
     int? fatigueRiskPercent,
+    double? fatigueEventDurationSeconds,
     bool? recovered,
   }) {
     if (!mounted) return;
@@ -203,8 +206,14 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
 
       if (isRecovered) {
         _hasUnrecoveredJetsonAlert = false;
+        _activeFatigueStartedAt = null;
       } else if (isUnrecovered) {
         _hasUnrecoveredJetsonAlert = true;
+        _activeFatigueStartedAt = FatigueRiskLogic.inferEventStartedAt(
+          eventTime: alertTimestamp ?? DateTime.now(),
+          eventDurationSeconds: fatigueEventDurationSeconds,
+          previousStartedAt: _activeFatigueStartedAt,
+        );
       }
 
       if (isJetson) {
@@ -212,6 +221,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
           currentRisk: _fatigueRisk,
           isRecovered: isRecovered,
           reportedRiskPercent: fatigueRiskPercent,
+          eventDurationSeconds: fatigueEventDurationSeconds,
         );
       }
       _alerts.insert(
@@ -244,6 +254,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
       if (_jetsonDeviceState != nextState && nextState == 'Offline') {
         _fatigueRisk = _fatigueRiskResetValue;
         _hasUnrecoveredJetsonAlert = false;
+        _activeFatigueStartedAt = null;
       } else if (presence.online && presence.fatigueRiskPercent != null) {
         _fatigueRisk = presence.fatigueRiskPercent!.clamp(0, 100).toInt();
       }
@@ -260,6 +271,7 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
         _fatigueRisk = FatigueRiskLogic.applyRamp(
           currentRisk: _fatigueRisk,
           isActiveFatigue: _hasUnrecoveredJetsonAlert,
+          activeDurationSeconds: _activeFatigueDurationSeconds(),
         );
       });
     });
@@ -277,10 +289,20 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen>
         setState(() {
           _fatigueRisk = _fatigueRiskResetValue;
           _hasUnrecoveredJetsonAlert = false;
+          _activeFatigueStartedAt = null;
           _jetsonDeviceState = 'Offline';
         });
       }
     });
+  }
+
+  double? _activeFatigueDurationSeconds() {
+    final startedAt = _activeFatigueStartedAt;
+    if (startedAt == null) return null;
+    return FatigueRiskLogic.activeDurationSeconds(
+      startedAt: startedAt,
+      now: DateTime.now(),
+    );
   }
 
   bool _messageLooksRecovered(String message) {

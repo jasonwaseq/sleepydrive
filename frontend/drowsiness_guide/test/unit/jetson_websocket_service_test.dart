@@ -7,19 +7,31 @@ void main() {
   // ---------------------------------------------------------------------------
   group('JetsonAlert.levelLabel', () {
     test('level 0 → SAFE', () {
-      expect(JetsonAlert(deviceId: 'dev', level: 0, message: 'm').levelLabel, 'SAFE');
+      expect(
+        JetsonAlert(deviceId: 'dev', level: 0, message: 'm').levelLabel,
+        'SAFE',
+      );
     });
 
     test('level 1 → WARNING', () {
-      expect(JetsonAlert(deviceId: 'dev', level: 1, message: 'm').levelLabel, 'WARNING');
+      expect(
+        JetsonAlert(deviceId: 'dev', level: 1, message: 'm').levelLabel,
+        'WARNING',
+      );
     });
 
     test('level 2 → DANGER', () {
-      expect(JetsonAlert(deviceId: 'dev', level: 2, message: 'm').levelLabel, 'DANGER');
+      expect(
+        JetsonAlert(deviceId: 'dev', level: 2, message: 'm').levelLabel,
+        'DANGER',
+      );
     });
 
     test('unknown level → UNKNOWN', () {
-      expect(JetsonAlert(deviceId: 'dev', level: 99, message: 'm').levelLabel, 'UNKNOWN');
+      expect(
+        JetsonAlert(deviceId: 'dev', level: 99, message: 'm').levelLabel,
+        'UNKNOWN',
+      );
     });
   });
 
@@ -112,14 +124,17 @@ void main() {
       expect(presences.first.online, isFalse);
     });
 
-    test('fatigue_risk_percent in JSON payload is propagated to alert', () async {
-      svc.processMessageForTesting(
-        '{"level":2,"message":"drowsy","fatigue_risk_percent":85}',
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(alerts.length, 1);
-      expect(alerts.first.fatigueRiskPercent, 85);
-    });
+    test(
+      'fatigue_risk_percent in JSON payload is propagated to alert',
+      () async {
+        svc.processMessageForTesting(
+          '{"level":2,"message":"drowsy","fatigue_risk_percent":85}',
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(alerts.length, 1);
+        expect(alerts.first.fatigueRiskPercent, 85);
+      },
+    );
 
     test('fractional fatigue risk (0–1 range) is scaled to percent', () async {
       svc.processMessageForTesting(
@@ -129,11 +144,25 @@ void main() {
       expect(alerts.first.fatigueRiskPercent, 75);
     });
 
+    test('fatigue event duration is parsed from metadata', () async {
+      svc.processMessageForTesting(
+        '{"level":2,"message":"DROWSINESS","metadata":{"closed_duration_sec":3.5}}',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(alerts.first.fatigueEventDurationSeconds, 3.5);
+    });
+
+    test('fatigue event duration is parsed from alert message', () async {
+      svc.processMessageForTesting(
+        '{"level":2,"message":"HEAD INATTENTION DETECTED (deviated 4.0s)"}',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(alerts.first.fatigueEventDurationSeconds, 4.0);
+    });
+
     test('non-alert JSON type returns no alert', () async {
       // type "info" is not a known alert type
-      svc.processMessageForTesting(
-        '{"type":"info","message":"system ready"}',
-      );
+      svc.processMessageForTesting('{"type":"info","message":"system ready"}');
       await Future<void>.delayed(Duration.zero);
       expect(alerts, isEmpty);
     });

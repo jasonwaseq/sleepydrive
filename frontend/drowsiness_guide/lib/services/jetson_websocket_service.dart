@@ -11,6 +11,7 @@ class JetsonAlert {
   final DateTime timestamp;
   final Map<String, dynamic> metadata;
   final int? fatigueRiskPercent;
+  final double? fatigueEventDurationSeconds;
   final bool? recovered;
 
   JetsonAlert({
@@ -20,6 +21,7 @@ class JetsonAlert {
     DateTime? timestamp,
     Map<String, dynamic>? metadata,
     this.fatigueRiskPercent,
+    this.fatigueEventDurationSeconds,
     this.recovered,
   }) : timestamp = timestamp ?? DateTime.now(),
        metadata = metadata ?? const <String, dynamic>{};
@@ -214,6 +216,11 @@ class JetsonWebSocketService {
             timestamp: ts,
             metadata: metadata,
             fatigueRiskPercent: _parseFatigueRisk(payload, metadata),
+            fatigueEventDurationSeconds: _parseFatigueEventDuration(
+              payload,
+              metadata,
+              msg,
+            ),
             recovered: _parseRecoveryState(payload, metadata, msg, level),
           );
         }
@@ -357,7 +364,17 @@ class JetsonWebSocketService {
       'fatigueScore',
       'score',
       'event_count',
+      'continuous_duration_sec',
+      'event_duration_sec',
+      'fatigue_duration_sec',
+      'duration_sec',
       'closed_duration_sec',
+      'eyes_closed_duration_sec',
+      'deviated_duration_sec',
+      'head_inattention_duration_sec',
+      'out_of_frame_duration_sec',
+      'no_face_duration_sec',
+      'absent_duration_sec',
       'ear',
       'blink_ms',
     ]) {
@@ -391,6 +408,55 @@ class JetsonWebSocketService {
     final risk = _parsePercent(payload['risk'] ?? metadata['risk']);
     if (risk != null && risk > 2) return risk;
     return null;
+  }
+
+  double? _parseFatigueEventDuration(
+    Map<String, dynamic> payload,
+    Map<String, dynamic> metadata,
+    String message,
+  ) {
+    for (final key in const [
+      'continuous_duration_sec',
+      'event_duration_sec',
+      'fatigue_duration_sec',
+      'duration_sec',
+      'closed_duration_sec',
+      'eyes_closed_duration_sec',
+      'deviated_duration_sec',
+      'head_inattention_duration_sec',
+      'out_of_frame_duration_sec',
+      'no_face_duration_sec',
+      'absent_duration_sec',
+    ]) {
+      final value = _parseSeconds(payload[key] ?? metadata[key]);
+      if (value != null) return value;
+    }
+
+    final blinkMs = _parseSeconds(payload['blink_ms'] ?? metadata['blink_ms']);
+    if (blinkMs != null) return blinkMs / 1000.0;
+
+    final match = RegExp(
+      r'(eyes closed|deviated|out of frame|no face)[^\d]*(\d+(?:\.\d+)?)\s*s',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (match == null) return null;
+    return double.tryParse(match.group(2) ?? '');
+  }
+
+  double? _parseSeconds(dynamic raw) {
+    if (raw == null || raw is bool) return null;
+    final text = raw.toString().trim().toLowerCase();
+    if (text.isEmpty) return null;
+    final parsed = num.tryParse(
+      text
+          .replaceAll('seconds', '')
+          .replaceAll('second', '')
+          .replaceAll('sec', '')
+          .replaceAll('s', '')
+          .trim(),
+    );
+    if (parsed == null || parsed.isNaN) return null;
+    return parsed.toDouble().clamp(0, double.infinity).toDouble();
   }
 
   int _parseLevel(dynamic raw) {

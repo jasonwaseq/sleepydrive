@@ -25,23 +25,74 @@ void main() {
       );
     });
 
-    test('increments by step on active alert without reported risk', () {
+    test('increments by 5 on short active event without reported risk', () {
       expect(
         FatigueRiskLogic.applyAlert(
           currentRisk: 40,
           isRecovered: false,
           reportedRiskPercent: null,
+          eventDurationSeconds: 2.9,
         ),
-        50,
+        45,
+      );
+    });
+
+    test('uses continuous duration target after 3 seconds', () {
+      expect(
+        FatigueRiskLogic.applyAlert(
+          currentRisk: 0,
+          isRecovered: false,
+          reportedRiskPercent: null,
+          eventDurationSeconds: 4,
+        ),
+        80,
       );
     });
   });
 
   group('FatigueRiskLogic.applyRamp', () {
-    test('ramps up by 2 while active', () {
+    test('does not timer-ramp before continuous threshold', () {
+      expect(
+        FatigueRiskLogic.applyRamp(
+          currentRisk: 40,
+          isActiveFatigue: true,
+          activeDurationSeconds: 3,
+        ),
+        40,
+      );
+    });
+
+    test('ramps long continuous event to 100 by 5 seconds', () {
+      expect(
+        FatigueRiskLogic.applyRamp(
+          currentRisk: 40,
+          isActiveFatigue: true,
+          activeDurationSeconds: 4,
+        ),
+        80,
+      );
+      expect(
+        FatigueRiskLogic.applyRamp(
+          currentRisk: 80,
+          isActiveFatigue: true,
+          activeDurationSeconds: 5,
+        ),
+        100,
+      );
+      expect(
+        FatigueRiskLogic.applyRamp(
+          currentRisk: 90,
+          isActiveFatigue: true,
+          activeDurationSeconds: 4,
+        ),
+        90,
+      );
+    });
+
+    test('keeps active risk unchanged without duration', () {
       expect(
         FatigueRiskLogic.applyRamp(currentRisk: 40, isActiveFatigue: true),
-        42,
+        40,
       );
     });
 
@@ -68,6 +119,44 @@ void main() {
           reportedRiskPercent: null,
         ),
         100,
+      );
+    });
+  });
+
+  group('FatigueRiskLogic event timing', () {
+    test('infers continuous event start from event time and duration', () {
+      final eventTime = DateTime(2026, 1, 1, 12);
+
+      expect(
+        FatigueRiskLogic.inferEventStartedAt(
+          eventTime: eventTime,
+          eventDurationSeconds: 3.5,
+        ),
+        eventTime.subtract(const Duration(milliseconds: 3500)),
+      );
+    });
+
+    test('keeps earliest known continuous event start', () {
+      final previous = DateTime(2026, 1, 1, 11, 59, 50);
+      final eventTime = DateTime(2026, 1, 1, 12);
+
+      expect(
+        FatigueRiskLogic.inferEventStartedAt(
+          eventTime: eventTime,
+          eventDurationSeconds: 3.5,
+          previousStartedAt: previous,
+        ),
+        previous,
+      );
+    });
+
+    test('computes active duration from shared helper', () {
+      expect(
+        FatigueRiskLogic.activeDurationSeconds(
+          startedAt: DateTime(2026, 1, 1, 12),
+          now: DateTime(2026, 1, 1, 12, 0, 4, 500),
+        ),
+        4.5,
       );
     });
   });
